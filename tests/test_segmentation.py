@@ -12,6 +12,7 @@ import pytest
 
 from src.segmentation import (
     SegmentationConfig,
+    clean_character_crop,
     normalize_character,
     segment_characters,
 )
@@ -81,6 +82,18 @@ class TestCharacterSegmentation:
         assert out.max() == 255
         assert out.min() == 0
         assert out[:, 16].sum() > 0
+
+    def test_clean_character_crop_removes_detached_border_fragments(self):
+        char = np.zeros((40, 28), dtype=np.uint8)
+        char[8:34, 12:16] = 255       # main vertical glyph
+        char[0:2, 3:24] = 255         # detached top plate-border fragment
+        char[38:40, 4:23] = 255       # detached bottom plate-border fragment
+
+        cleaned = clean_character_crop(char)
+
+        assert cleaned[0:2].sum() == 0
+        assert cleaned[38:40].sum() == 0
+        assert cleaned[8:34, 12:16].sum() > 0
 
     def test_invalid_plate_dtype_rejected(self):
         with pytest.raises(ValueError):
