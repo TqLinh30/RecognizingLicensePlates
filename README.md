@@ -125,16 +125,19 @@ The repository includes a starter printed-character OCR model:
 
 ```text
 data/models/plate_synthetic_mlp.npz
+data/models/plate_zoning_templates.npz
 ```
 
 Train or refresh it:
 
 ```bash
 python -m scripts.train_synthetic_mlp
+python -m scripts.train_zoning_template
 ```
 
-The GUI loads it automatically. EMNIST training is still available as a fallback
-with `python -m scripts.train_emnist_mlp --download`. See
+The GUI loads these automatically and shows top-3 alternatives per character.
+EMNIST training is still available as a fallback with
+`python -m scripts.train_emnist_mlp --download`. See
 [`docs/training_data.md`](docs/training_data.md) for details and faster training
 options.
 

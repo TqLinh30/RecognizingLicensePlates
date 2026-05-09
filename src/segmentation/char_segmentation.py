@@ -50,6 +50,7 @@ class SegmentationConfig:
     reject_border_touching: bool = True
     border_margin_ratio: float = 0.015
     two_line_gap_ratio: float = 0.22
+    keep_largest_glyph_component: bool = True
 
 
 @dataclass
@@ -138,6 +139,8 @@ def segment_characters(
         if not _looks_like_character(comp, image_shape=(H, W), plate_area=plate_area, cfg=cfg):
             continue
         char_img = _crop_component(cleaned, comp, cfg.padding_ratio)
+        if cfg.keep_largest_glyph_component:
+            char_img = clean_character_crop(char_img)
         normalized = normalize_character(char_img, target_shape=cfg.char_shape)
         raw_chars.append(
             CharacterCandidate(
@@ -202,6 +205,40 @@ def normalize_character(
     x = (out_w - resized_w) // 2
     canvas[y : y + resized_h, x : x + resized_w] = resized
     return canvas
+
+
+def clean_character_crop(char_binary: np.ndarray) -> np.ndarray:
+    """
+    Remove detached border fragments from a character crop.
+
+    Real plate crops often contain tiny horizontal pieces from the top
+    or bottom plate border.  Those fragments are white foreground, so if
+    we leave them in, the tight bounding box becomes too tall and the
+    classifier sees a distorted glyph.  For printed plate characters the
+    main glyph is normally one connected component, so keeping the
+    dominant component is a robust cleanup step.
+    """
+    if char_binary.ndim != 2:
+        raise ValueError(
+            f"clean_character_crop expects a 2-D image; got shape {char_binary.shape}."
+        )
+    cc = connected_components(char_binary, connectivity=8)
+    if cc.num_labels <= 1:
+        return char_binary.copy()
+
+    # Prefer the largest foreground component, but add a mild centrality
+    # term so a long plate-border strip near the crop edge does not beat
+    # the actual glyph in unusual cases.
+    H, W = char_binary.shape
+    cx, cy = (W - 1) / 2.0, (H - 1) / 2.0
+    best = max(
+        cc.stats,
+        key=lambda comp: comp.area
+        - 0.12 * comp.area * (abs(comp.cx - cx) / max(1.0, W) + abs(comp.cy - cy) / max(1.0, H)),
+    )
+    cleaned = np.zeros_like(char_binary, dtype=np.uint8)
+    cleaned[cc.labels == best.label] = 255
+    return cleaned
 
 
 def draw_character_boxes(

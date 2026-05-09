@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-09
+
+### Added
+
+- Zoning-template OCR classifier based on fixed white-pixel regions.
+- Training script and bundled model: `python -m scripts.train_zoning_template`
+  and `data/models/plate_zoning_templates.npz`.
+- GUI top-3 OCR alternatives per character and separate Raw OCR vs
+  Vietnam-format OCR output.
+
+### Changed
+
+- Character segmentation now removes detached border fragments before
+  normalizing each glyph to `32x32`.
+- GUI blends MLP and zoning-template probabilities when both models exist.
+
 ## [0.6.0] - 2026-05-09
 
 ### Added
