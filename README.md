@@ -75,6 +75,7 @@ RecognizingLicensePlates/
 │   ├── output/
 │   └── models/
 ├── scripts/
+│   ├── train_synthetic_mlp.py
 │   └── train_emnist_mlp.py
 ├── requirements.txt
 ├── gui.py
@@ -120,13 +121,20 @@ The GUI lets you choose an image from your computer and displays each
 intermediate stage: preprocessing, plate detection, normalization, character
 segmentation, feature extraction, and OCR if a trained model exists.
 
-Train the starter EMNIST OCR model:
+The repository includes a starter printed-character OCR model:
 
-```bash
-python -m scripts.train_emnist_mlp --download
+```text
+data/models/plate_synthetic_mlp.npz
 ```
 
-This saves `data/models/emnist_mlp.npz`; the GUI loads it automatically. See
+Train or refresh it:
+
+```bash
+python -m scripts.train_synthetic_mlp
+```
+
+The GUI loads it automatically. EMNIST training is still available as a fallback
+with `python -m scripts.train_emnist_mlp --download`. See
 [`docs/training_data.md`](docs/training_data.md) for details and faster training
 options.
 

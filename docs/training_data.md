@@ -1,77 +1,117 @@
-# Training Data and OCR Model
+# Training Data and OCR Models
 
-The GUI can classify segmented characters when this model file exists:
+The GUI can classify segmented characters when a trained model file exists. It
+tries models in this order:
 
 ```text
+data/models/plate_synthetic_mlp.npz
 data/models/emnist_mlp.npz
 ```
 
-The model is trained from the public EMNIST ByClass dataset. EMNIST is
-documented by NIST:
+The recommended model is `plate_synthetic_mlp.npz`, trained from synthetic
+printed plate characters. EMNIST is kept as a fallback baseline.
+
+---
+
+## Why 32x32?
+
+EMNIST source images are `28x28`, but this project normalizes **all OCR inputs**
+to `32x32`.
+
+That is intentional:
+
+- the segmentation stage outputs `32x32` binary glyph crops,
+- HOG uses `8x8` cells, giving a clean `4x4` cell grid,
+- training data and real segmented characters pass through the same
+  `normalize_character(..., target_shape=(32, 32))` function.
+
+So `28x28` is only the raw EMNIST format. The classifier always sees `32x32`.
+
+---
+
+## Recommended: Train Synthetic Printed Characters
+
+From the project root:
+
+```bash
+python -m scripts.train_synthetic_mlp
+```
+
+This command:
+
+1. renders digits `0-9` and uppercase letters `A-Z` with system fonts,
+2. applies small rotation, shear, blur, threshold jitter, noise, and morphology,
+3. normalizes each glyph to the same `32x32` canvas used by segmentation,
+4. extracts HOG + zoning features,
+5. trains the NumPy-only MLP classifier,
+6. saves `data/models/plate_synthetic_mlp.npz`.
+
+The bundled starter model was trained this way with a generated holdout
+accuracy of about 90%. It should be a better fit for printed plate characters
+than EMNIST handwriting.
+
+---
+
+## Fallback: Train EMNIST
+
+EMNIST is documented by NIST:
 
 ```text
 https://www.nist.gov/itl/products-and-services/emnist-dataset
 ```
+
+Train the fallback model:
+
+```bash
+python -m scripts.train_emnist_mlp --download
+```
+
+This downloads the public EMNIST ByClass archive and trains
+`data/models/emnist_mlp.npz`.
 
 The archive itself is large, so it is not committed to this repository. The
 training script downloads it into `data/raw/emnist/`, which is ignored by Git.
 The downloader tries a public Western Sydney/MARCS mirror first, then historical
 NIST URLs, and validates that the downloaded file is a real zip archive.
 
----
-
-## Train The Starter Model
-
-From the project root:
-
-```bash
-python -m scripts.train_emnist_mlp --download
-```
-
-This command:
-
-1. downloads the official EMNIST `gzip.zip` archive if missing,
-2. selects digits `0-9` and uppercase letters `A-Z`,
-3. corrects EMNIST orientation with a transpose,
-4. normalizes each glyph to `32x32`,
-5. extracts the same HOG + zoning features used by the GUI,
-6. trains the NumPy-only MLP classifier,
-7. saves `data/models/emnist_mlp.npz`.
-
-After the model is saved, run:
+After a model is saved, run:
 
 ```bash
 python gui.py
 ```
 
-The GUI will load the model automatically and show Step 6-7 OCR output.
+The GUI will load the best available model automatically and show Step 6-7 OCR
+output.
 
 ---
 
-## Faster Or Stronger Training
+## Faster Or Stronger Training Options
 
-Quick baseline:
+Quick synthetic baseline:
 
 ```bash
-python -m scripts.train_emnist_mlp --download --samples-per-class 100 --epochs 10
+python -m scripts.train_synthetic_mlp --samples-per-class 150 --epochs 30
 ```
 
-Reproduce the bundled starter model:
+Stronger synthetic model:
+
+```bash
+python -m scripts.train_synthetic_mlp --samples-per-class 1000 --epochs 140
+```
+
+EMNIST fallback:
 
 ```bash
 python -m scripts.train_emnist_mlp --download --samples-per-class 120 --epochs 120 --learning-rate 0.03
 ```
 
-The first run spends most of its time downloading EMNIST. Later runs reuse the
-local archive.
-
 ---
 
 ## Important Limitation
 
-EMNIST is a handwriting dataset, while license plates use printed glyphs. This
-is good enough for a starter OCR baseline and for wiring the full pipeline, but
-real plate accuracy will improve if you later add:
+The synthetic model is closer to real plates than EMNIST, but it is still not a
+replacement for real plate-character data. Real plate accuracy will improve if
+you later add:
 
 - real segmented plate-character images,
 - synthetic rendered plate fonts,
