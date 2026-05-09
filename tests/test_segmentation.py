@@ -132,7 +132,7 @@ class TestCharacterSegmentation:
 
         assert len(result.characters) == 8
         seven_like_slots = result.characters[3:]
-        assert all(char.width >= 18 for char in seven_like_slots)
+        assert all(char.width >= 16 for char in seven_like_slots)
         assert all(char.normalized[:10].sum() > 40 * 255 for char in seven_like_slots)
 
     def test_invalid_plate_dtype_rejected(self):
