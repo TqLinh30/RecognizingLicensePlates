@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-09
+
+### Added
+
+- **Step 3 - Plate normalization**:
+  - `hough_lines` and `estimate_skew_angle` for near-horizontal line voting.
+  - `crop_with_padding`, `rotate_image`, and `resize_bilinear` with bilinear interpolation.
+  - `normalize_plate` to crop, deskew, and resize detected plates to a canonical shape.
+- **Step 4 - Character segmentation**:
+  - Otsu binarization plus connected-component character extraction.
+  - Character filtering, row-aware sorting, and 32x32 character normalization.
+- **Step 5 - Feature extraction**:
+  - HOG descriptors with cell histograms and block normalization.
+  - Zoning foreground-density descriptors.
+  - Combined feature-vector extraction for single characters and batches.
+- **Step 6 - Character classification**:
+  - `KNNClassifier` baseline with probability-style vote fractions.
+  - `MLPClassifier` with NumPy-only dense layers, ReLU, softmax, and backpropagation.
+- **Step 7 - Recognition pipeline**:
+  - `recognize_license_plate` end-to-end orchestration.
+  - Vietnamese-plate postprocessing with position-aware confusion correction.
+  - Unit tests for normalization, segmentation, features, classifiers, and recognition.
+
 ## [0.2.0] - 2026-05-09
 
 ### Added

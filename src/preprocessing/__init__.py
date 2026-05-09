@@ -29,7 +29,7 @@ from src.preprocessing.histogram import (
 )
 from src.preprocessing.clahe import clahe
 from src.preprocessing.thresholding import otsu_threshold, fixed_threshold
-from src.preprocessing.pipeline import preprocess
+from src.preprocessing.pipeline import PreprocessConfig, PreprocessResult, preprocess
 
 __all__ = [
     "rgb_to_grayscale",
@@ -41,5 +41,7 @@ __all__ = [
     "clahe",
     "otsu_threshold",
     "fixed_threshold",
+    "PreprocessConfig",
+    "PreprocessResult",
     "preprocess",
 ]
