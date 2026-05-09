@@ -18,9 +18,8 @@ import numpy as np
 
 from src.classifiers import PixelTemplateClassifier, save_pixel_template_model
 from src.detection import detect_plate
-from src.normalization import normalize_plate
 from src.preprocessing import preprocess
-from src.segmentation import segment_characters
+from src.recognition import select_plate_region
 from src.utils.image_io import load_image
 
 
@@ -81,11 +80,10 @@ def _segment_labeled_sample(image_path: Path, expected_text: str) -> list[np.nda
     image = load_image(image_path)
     pre = preprocess(image)
     det = detect_plate(pre.enhanced)
-    if not det.candidates:
-        raise RuntimeError(f"No plate candidate found in {image_path}")
-
-    norm = normalize_plate(pre.enhanced, det.candidates[0])
-    seg = segment_characters(norm.normalized)
+    selected = select_plate_region(pre.enhanced, det.candidates)
+    if selected is None:
+        raise RuntimeError(f"No usable plate region found in {image_path}")
+    seg = selected.segmentation
     if len(seg.characters) != len(expected_text):
         boxes = [char.as_box() for char in seg.characters]
         raise RuntimeError(

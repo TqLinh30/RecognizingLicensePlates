@@ -36,9 +36,9 @@ from tkinter import filedialog, messagebox, ttk
 from src.classifiers import load_mlp_model, load_pixel_template_model, load_zoning_template_model
 from src.detection import detect_plate, draw_candidates
 from src.features import extract_batch_features, feature_length
-from src.normalization import normalize_plate
 from src.preprocessing import preprocess
-from src.segmentation import draw_character_boxes, segment_characters
+from src.recognition import select_plate_region
+from src.segmentation import draw_character_boxes
 from src.utils.image_io import load_image
 
 
@@ -394,47 +394,52 @@ def analyze_image(path: Path) -> AnalysisOutput:
         ]
     )
 
-    if not det.candidates:
+    selected = select_plate_region(pre.enhanced, det.candidates)
+    if selected is None or not selected.segmentation.characters:
         summary = _summary_text(path, image, len(det.candidates), None, None, None)
         stages.append(
             StageOutput(
                 "Steps 3-7 - Skipped",
-                "No plate candidate was detected, so cropping, segmentation, features, and OCR were skipped.",
+                "No usable plate region was detected, so cropping, segmentation, features, and OCR were skipped.",
             )
         )
         return AnalysisOutput(path=path, summary=summary, stages=stages)
 
     # Step 3 - normalization.
-    best = det.candidates[0]
-    norm = normalize_plate(pre.enhanced, best)
     stages.extend(
         [
             StageOutput(
                 "Step 3.1 - Cropped Plate",
-                f"Best candidate box: {best.as_box()} with margin. Crop shape: {norm.cropped.shape}",
-                norm.cropped,
+                (
+                    f"Selected region: {selected.source}. Box: {selected.box}. "
+                    f"Crop shape: {selected.cropped.shape if selected.cropped is not None else selected.normalized.shape}."
+                ),
+                selected.cropped,
             ),
             StageOutput(
                 "Step 3.2 - Hough Edge Map",
                 "Sobel magnitude edge map used for near-horizontal Hough voting.",
-                norm.edge_image,
+                selected.edge_image,
             ),
             StageOutput(
                 "Step 3.3 - Deskewed Plate",
-                f"Estimated skew angle: {norm.angle_degrees:.2f} degrees. Rotated by {-norm.angle_degrees:.2f} degrees.",
-                norm.deskewed,
+                (
+                    f"Estimated skew angle: {selected.angle_degrees:.2f} degrees. "
+                    f"Selected by downstream segmentation count."
+                ),
+                selected.deskewed,
             ),
             StageOutput(
                 "Step 3.4 - Normalized Plate",
-                f"Resized to canonical shape: {norm.normalized.shape}.",
-                norm.normalized,
+                f"Plate image used for segmentation: {selected.normalized.shape}.",
+                selected.normalized,
             ),
         ]
     )
 
     # Step 4 - segmentation.
-    seg = segment_characters(norm.normalized)
-    boxes = draw_character_boxes(norm.normalized, seg.characters)
+    seg = selected.segmentation
+    boxes = draw_character_boxes(selected.normalized, seg.characters)
     char_strip = make_character_strip([char.normalized for char in seg.characters])
     char_lines = [
         f"#{i}: box={char.as_box()}, row={char.row_index}"
@@ -508,7 +513,7 @@ def analyze_image(path: Path) -> AnalysisOutput:
         path,
         image,
         len(det.candidates),
-        norm.angle_degrees,
+        selected.angle_degrees,
         len(seg.characters),
         feature_summary,
         final_text,
