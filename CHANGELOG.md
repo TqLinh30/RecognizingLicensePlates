@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Sample OCR benchmark now covers all eleven labeled bundled images:
+  `synthetic_car.png`, `synthetic_plate.png`, `plate1.jpg` through
+  `plate9.jpg`, and `plate4.png`.
+- Real sample-template model was refreshed from 85 segmented glyph crops from
+  the current `data/samples` set.
+- Plate-region selection now balances plausible character count, detector
+  confidence, and image-border penalties so short real plates such as `LX570`
+  do not lose to weak false regions.
+
+### Fixed
+
+- Segmentation fallback now relaxes the minimum glyph-height threshold only
+  when the adaptive fallback is needed, recovering plate-only images with
+  smaller text while keeping the normal detector path strict.
+- Removed the stale `images.jpg` sample label and replaced it with the current
+  `plate5.jpg` filename.
+
 ## [0.11.0] - 2026-05-09
 
 ### Changed
