@@ -10,6 +10,10 @@ from src.recognition.pipeline import (
     RecognitionResult,
     recognize_license_plate,
 )
+from src.recognition.plate_selector import (
+    PlateRegionOption,
+    select_plate_region,
+)
 from src.recognition.postprocessing import (
     PostprocessResult,
     correct_character_for_slot,
@@ -22,6 +26,8 @@ __all__ = [
     "RecognitionConfig",
     "RecognitionResult",
     "recognize_license_plate",
+    "PlateRegionOption",
+    "select_plate_region",
     "PostprocessResult",
     "correct_character_for_slot",
     "format_vietnam_plate",
