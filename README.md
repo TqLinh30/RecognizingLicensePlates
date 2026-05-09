@@ -1,12 +1,13 @@
 # Recognizing License Plates
 
-A license plate recognition (LPR) system built **entirely from scratch** in Python.
-This project intentionally avoids high-level computer vision libraries (OpenCV,
-scikit-image, etc.) — every image-processing and pattern-recognition algorithm is
-implemented manually using only NumPy, with Pillow used solely for file I/O.
+A license plate recognition (LPR) system built **entirely from scratch** in
+Python. The project intentionally avoids high-level computer vision libraries
+such as OpenCV and scikit-image. Every image-processing and machine-learning
+algorithm is implemented manually with NumPy; Pillow is used only for image
+file I/O.
 
-The goal is **educational**: to deeply understand the underlying mathematics and
-algorithms of classical computer vision and machine learning.
+The goal is educational: expose the mathematics and engineering trade-offs
+inside a classical ALPR pipeline.
 
 ---
 
@@ -14,26 +15,26 @@ algorithms of classical computer vision and machine learning.
 
 ```
 Input Image
-   │
-   ▼
-[1] Preprocessing            ← (current step)
-   │
-   ▼
+   |
+   v
+[1] Preprocessing
+   |
+   v
 [2] License Plate Detection
-   │
-   ▼
+   |
+   v
 [3] Plate Cropping & Normalization
-   │
-   ▼
+   |
+   v
 [4] Character Segmentation
-   │
-   ▼
+   |
+   v
 [5] Feature Extraction
-   │
-   ▼
+   |
+   v
 [6] Character Classification
-   │
-   ▼
+   |
+   v
 [7] Post-processing & Output
 ```
 
@@ -44,95 +45,34 @@ Input Image
 ```
 RecognizingLicensePlates/
 ├── src/
-│   ├── preprocessing/          # Step 1: image preprocessing
-│   │   ├── __init__.py
-│   │   ├── grayscale.py
-│   │   ├── gaussian_blur.py
-│   │   ├── median_filter.py
-│   │   ├── histogram.py
-│   │   ├── clahe.py
-│   │   ├── thresholding.py
-│   │   ├── pipeline.py
-│   │   └── demo.py
-│   ├── detection/              # Step 2: plate detection
-│   │   ├── __init__.py
-│   │   ├── sobel.py            # Sobel-X gradient (separable)
-│   │   ├── morphology.py       # Dilation, erosion, opening, closing
-│   │   ├── connected_components.py  # Two-pass labeling + Union-Find
-│   │   ├── plate_detector.py   # Filter, score, rank candidates
-│   │   └── demo.py
-│   ├── utils/
-│   │   ├── __init__.py
-│   │   ├── image_io.py         # Image read/write via Pillow
-│   │   └── visualization.py    # Debug visualization helpers
-│   └── __init__.py
+│   ├── preprocessing/          # Step 1: grayscale, blur, CLAHE, Otsu
+│   ├── detection/              # Step 2: Sobel, morphology, connected components
+│   ├── normalization/          # Step 3: crop, Hough skew, rotate, resize
+│   ├── segmentation/           # Step 4: connected-component character segmentation
+│   ├── features/               # Step 5: HOG + zoning descriptors
+│   ├── classifiers/            # Step 6: KNN baseline + NumPy MLP
+│   ├── recognition/            # Step 7: end-to-end orchestration + postprocessing
+│   └── utils/                  # Image I/O and debug visualization helpers
 ├── tests/
-│   ├── test_preprocessing.py   # Unit tests for Step 1
-│   └── test_detection.py       # Unit tests for Step 2
-├── data/
-│   ├── samples/                # Sample input images
-│   └── output/                 # Pipeline output
+│   ├── test_preprocessing.py
+│   ├── test_detection.py
+│   ├── test_normalization.py
+│   ├── test_segmentation.py
+│   ├── test_features.py
+│   ├── test_classifiers.py
+│   └── test_recognition.py
 ├── docs/
 │   ├── step1_preprocessing.md
 │   ├── step2_detection.md
+│   ├── step3_to_step7_recognition.md
 │   └── gitflow.md
+├── data/
+│   ├── samples/
+│   ├── output/
+│   └── models/
 ├── requirements.txt
-├── .gitignore
+├── CHANGELOG.md
 └── README.md
-```
-
----
-
-## Gitflow Branching Model
-
-This project follows the **Gitflow** workflow:
-
-| Branch        | Purpose                                                     |
-|---------------|-------------------------------------------------------------|
-| `main`        | Production-ready, tagged releases only.                     |
-| `develop`     | Integration branch for completed features.                  |
-| `feature/*`   | New features (e.g. `feature/step1-preprocessing`).          |
-| `release/*`   | Pre-release stabilization (e.g. `release/v0.1.0`).          |
-| `hotfix/*`    | Urgent fixes against `main`.                                |
-| `bugfix/*`    | Non-urgent fixes against `develop`.                         |
-
-### Standard workflow
-
-```bash
-# Start a new feature
-git checkout develop
-git pull origin develop
-git checkout -b feature/step1-preprocessing
-
-# ... commit work ...
-
-# Finish a feature
-git checkout develop
-git merge --no-ff feature/step1-preprocessing
-git branch -d feature/step1-preprocessing
-git push origin develop
-
-# Cut a release
-git checkout -b release/v0.1.0 develop
-# bump version, finalize docs
-git checkout main
-git merge --no-ff release/v0.1.0
-git tag -a v0.1.0 -m "Release v0.1.0 - Preprocessing module"
-git checkout develop
-git merge --no-ff release/v0.1.0
-git branch -d release/v0.1.0
-```
-
-### Commit message convention
-
-```
-<type>(<scope>): <subject>
-
-Types: feat | fix | docs | style | refactor | test | chore
-Examples:
-  feat(preprocessing): add Gaussian blur with separable kernel
-  fix(clahe): correct tile boundary interpolation
-  docs(step1): add algorithm explanation for Otsu's method
 ```
 
 ---
@@ -143,31 +83,85 @@ Examples:
 git clone https://github.com/TqLinh30/RecognizingLicensePlates.git
 cd RecognizingLicensePlates
 python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+On Linux/macOS, activate the environment with:
+
+```bash
+source venv/bin/activate
 ```
 
 ---
 
-## Usage (Step 1 demo)
+## Usage
+
+Step 1 preprocessing demo:
 
 ```bash
 python -m src.preprocessing.demo data/samples/plate.jpg
 ```
 
-Output is saved under `data/output/`.
+Step 2 detection demo:
+
+```bash
+python -m src.detection.demo data/samples/car.jpg
+```
+
+End-to-end recognition is exposed as a Python API. It expects a fitted
+classifier, such as `KNNClassifier` or `MLPClassifier`:
+
+```python
+from src.recognition import recognize_license_plate
+
+result = recognize_license_plate(image_array, fitted_classifier)
+print(result.text)
+```
 
 ---
 
 ## Roadmap
 
-- [x] **Step 1**: Preprocessing (grayscale, blur, CLAHE, Otsu)
-- [x] **Step 2**: License plate detection (Sobel + morphology + connected components)
-- [ ] Step 3: Plate cropping & normalization (Hough + affine transform)
-- [ ] Step 4: Character segmentation
-- [ ] Step 5: Feature extraction (HOG + zoning)
-- [ ] Step 6: Classification (KNN baseline → MLP)
-- [ ] Step 7: Post-processing & format validation
+- [x] Step 1: Preprocessing (grayscale, blur, CLAHE, Otsu)
+- [x] Step 2: License plate detection (Sobel + morphology + connected components)
+- [x] Step 3: Plate cropping & normalization (Hough + affine transform)
+- [x] Step 4: Character segmentation
+- [x] Step 5: Feature extraction (HOG + zoning)
+- [x] Step 6: Classification (KNN baseline + MLP)
+- [x] Step 7: Post-processing & format validation
+
+Next practical milestone: collect/prepare a labeled character dataset,
+train `KNNClassifier` and `MLPClassifier`, then measure real plate
+accuracy end to end.
+
+---
+
+## Gitflow Branching Model
+
+This project follows Gitflow:
+
+| Branch | Purpose |
+|---|---|
+| `main` | Production-ready tagged releases. |
+| `develop` | Integration branch for completed features. |
+| `feature/*` | New feature work. |
+| `release/*` | Pre-release stabilization. |
+| `hotfix/*` | Urgent fixes against `main`. |
+
+Commit convention:
+
+```text
+<type>(<scope>): <subject>
+```
+
+Examples:
+
+```text
+feat(preprocessing): add Gaussian blur with separable kernel
+fix(clahe): correct tile boundary interpolation
+docs(step1): add Otsu derivation
+```
 
 ---
 
