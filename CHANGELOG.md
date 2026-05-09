@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-09
+
+### Added
+
+- **Step 2 — License plate detection module** with all algorithms implemented from scratch:
+  - `sobel`, `sobel_x` — separable Sobel gradient operators (1-D smoothing × 1-D differentiation).
+  - `dilate`, `erode`, `opening`, `closing` — morphological operations on binary images via shifted-slice broadcasting.
+  - `rect`, `cross` — structuring-element factories.
+  - `connected_components` — two-pass connected-component labeling with path-compressed Union-Find. Returns per-component statistics (bounding box, area, centroid, aspect ratio, fill ratio).
+  - `detect_plate` — end-to-end plate-candidate detector with composite scoring (aspect-ratio fit × fill ratio × gradient density).
+  - `draw_candidates` — visualization helper that draws bounding boxes on the original image.
+- CLI demo (`python -m src.detection.demo`).
+- 22 unit tests in `tests/test_detection.py`, all passing.
+- Documentation `docs/step2_detection.md`.
+
 ## [0.1.0] - 2026-05-09
 
 ### Added
