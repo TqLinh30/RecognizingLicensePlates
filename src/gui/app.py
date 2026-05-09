@@ -33,21 +33,25 @@ from PIL import Image, ImageTk
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from src.classifiers import load_mlp_model
+from src.classifiers import load_mlp_model, load_zoning_template_model
 from src.detection import detect_plate, draw_candidates
 from src.features import extract_batch_features, feature_length
 from src.normalization import normalize_plate
 from src.preprocessing import preprocess
-from src.recognition import postprocess_predictions
+from src.recognition import postprocess_predictions, vietnam_plate_slots
 from src.segmentation import draw_character_boxes, segment_characters
 from src.utils.image_io import load_image
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SYNTHETIC_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "plate_synthetic_mlp.npz"
+ZONING_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "plate_zoning_templates.npz"
 EMNIST_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "emnist_mlp.npz"
 DEFAULT_MODEL_PATHS = [SYNTHETIC_MODEL_PATH, EMNIST_MODEL_PATH]
+ZONING_WEIGHT = 0.50
+MLP_WEIGHT = 0.50
 TRAIN_COMMAND = "python -m scripts.train_synthetic_mlp"
+ZONING_TRAIN_COMMAND = "python -m scripts.train_zoning_template"
 
 
 # ---------------------------------------------------------------------------
@@ -488,8 +492,9 @@ def analyze_image(path: Path) -> AnalysisOutput:
     # Step 6/7 - classifier prediction when a trained model exists.
     final_text = None
     classifier_detail = _classifier_missing_message()
+    char_images = np.asarray([char.normalized for char in seg.characters], dtype=np.uint8)
     if features is not None:
-        final_text, classifier_detail = _classify_with_default_model(features)
+        final_text, classifier_detail = _classify_with_default_model(features, char_images)
     stages.append(
         StageOutput(
             "Step 6-7 - Classification & Post-processing",
@@ -509,7 +514,10 @@ def analyze_image(path: Path) -> AnalysisOutput:
     return AnalysisOutput(path=path, summary=summary, stages=stages)
 
 
-def _classify_with_default_model(features: np.ndarray) -> tuple[Optional[str], str]:
+def _classify_with_default_model(
+    features: np.ndarray,
+    char_images: np.ndarray,
+) -> tuple[Optional[str], str]:
     """
     Load the default EMNIST MLP model and classify segmented characters.
 
@@ -517,39 +525,68 @@ def _classify_with_default_model(features: np.ndarray) -> tuple[Optional[str], s
     incompatible, ``final_text`` is ``None`` and ``detail`` explains how
     to fix the situation without failing the whole GUI analysis.
     """
+    model_outputs: list[tuple[str, np.ndarray, np.ndarray, float]] = []
     model_path = _find_default_model()
-    if model_path is None:
+    if model_path is not None:
+        try:
+            model = load_mlp_model(model_path)
+            proba = model.predict_proba(features)
+            classes = np.asarray(model.classes_).astype(str)
+            model_outputs.append((str(model_path), classes, proba, MLP_WEIGHT))
+        except Exception as exc:
+            return (
+                None,
+                (
+                    f"Found model: {model_path}\n"
+                    f"But MLP prediction failed: {exc}\n\n"
+                    "Re-train the model with:\n"
+                    f"{TRAIN_COMMAND}"
+                ),
+            )
+
+    if ZONING_MODEL_PATH.is_file():
+        try:
+            zoning_model = load_zoning_template_model(ZONING_MODEL_PATH)
+            zoning_proba = zoning_model.predict_proba(char_images)
+            zoning_classes = np.asarray(zoning_model.classes_).astype(str)
+            model_outputs.append((str(ZONING_MODEL_PATH), zoning_classes, zoning_proba, ZONING_WEIGHT))
+        except Exception as exc:
+            return (
+                None,
+                (
+                    f"Found zoning-template model: {ZONING_MODEL_PATH}\n"
+                    f"But zoning prediction failed: {exc}\n\n"
+                    "Re-train the model with:\n"
+                    f"{ZONING_TRAIN_COMMAND}"
+                ),
+            )
+
+    if not model_outputs:
         return None, _classifier_missing_message()
 
-    try:
-        model = load_mlp_model(model_path)
-        proba = model.predict_proba(features)
-        classes = np.asarray(model.classes_).astype(str)
-        indices = np.argmax(proba, axis=1)
-        labels = classes[indices].tolist()
-        confidences = np.max(proba, axis=1).astype(float).tolist()
-        post = postprocess_predictions(labels, confidences)
-    except Exception as exc:
-        return (
-            None,
-            (
-                f"Found model: {model_path}\n"
-                f"But prediction failed: {exc}\n\n"
-                "Re-train the model with:\n"
-                f"{TRAIN_COMMAND}"
-            ),
-        )
+    classes, proba = _blend_model_outputs(model_outputs)
+    indices = np.argmax(proba, axis=1)
+    labels = classes[indices].tolist()
+    confidences = np.max(proba, axis=1).astype(float).tolist()
+    raw_text = "".join(labels)
+    vietnam_labels, vietnam_conf = _constrain_vietnam_slots(classes, proba)
+    vietnam_post = postprocess_predictions(vietnam_labels, vietnam_conf, use_vietnam_format=True)
+    top3_lines = _top_k_lines(classes, proba, vietnam_labels, k=3)
 
     lines = [
-        f"Model: {model_path}",
-        f"Raw classifier output: {post.raw_text}",
-        f"Corrected compact text: {post.corrected_text}",
-        f"Formatted result: {post.formatted_text}",
-        f"Average confidence: {post.average_confidence:.3f}",
+        "Models used:",
+        *[f"- {name} (weight={weight:.2f})" for name, _classes, _proba, weight in model_outputs],
+        "",
+        f"Raw OCR result: {raw_text}",
+        f"Vietnam-format result: {vietnam_post.formatted_text}",
+        f"Average raw confidence: {float(np.mean(confidences)):.3f}",
+        "",
+        "Top-3 per character:",
+        *top3_lines,
     ]
-    if post.low_confidence_indices:
-        lines.append(f"Low-confidence character indices: {post.low_confidence_indices}")
-    return post.formatted_text, "\n".join(lines)
+    if vietnam_post.low_confidence_indices:
+        lines.append(f"Low-confidence Vietnam-slot indices: {vietnam_post.low_confidence_indices}")
+    return raw_text, "\n".join(lines)
 
 
 def _classifier_missing_message() -> str:
@@ -557,8 +594,11 @@ def _classifier_missing_message() -> str:
     return (
         "No trained OCR model found at any of:\n"
         + "\n".join(str(path) for path in DEFAULT_MODEL_PATHS)
+        + f"\n{ZONING_MODEL_PATH}"
         + "\n\nTrain the recommended synthetic printed-character model with:\n"
         f"{TRAIN_COMMAND}\n\n"
+        "Train the zoning-template model with:\n"
+        f"{ZONING_TRAIN_COMMAND}\n\n"
         "After training, run the GUI again. It will load the model automatically."
     )
 
@@ -569,6 +609,61 @@ def _find_default_model() -> Optional[Path]:
         if path.is_file():
             return path
     return None
+
+
+def _blend_model_outputs(
+    outputs: list[tuple[str, np.ndarray, np.ndarray, float]],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Blend probability matrices from models with possibly different class orders."""
+    all_classes = np.unique(np.concatenate([classes for _name, classes, _proba, _weight in outputs]))
+    blended = np.zeros((outputs[0][2].shape[0], all_classes.shape[0]), dtype=np.float32)
+    total_weight = sum(weight for _name, _classes, _proba, weight in outputs)
+    for _name, classes, proba, weight in outputs:
+        for src_idx, cls in enumerate(classes):
+            dst_idx = int(np.where(all_classes == cls)[0][0])
+            blended[:, dst_idx] += (weight / total_weight) * proba[:, src_idx]
+    blended /= np.maximum(blended.sum(axis=1, keepdims=True), 1e-8)
+    return all_classes.astype(str), blended
+
+
+def _constrain_vietnam_slots(
+    classes: np.ndarray,
+    proba: np.ndarray,
+) -> tuple[list[str], list[float]]:
+    """Choose the best class per position under a simplified Vietnam-plate format."""
+    slots = vietnam_plate_slots(proba.shape[0])
+    labels: list[str] = []
+    confidences: list[float] = []
+    for row, slot in zip(proba, slots):
+        if slot == "D":
+            allowed = np.array([cls.isdigit() for cls in classes])
+        elif slot == "L":
+            allowed = np.array([cls.isalpha() for cls in classes])
+        else:
+            allowed = np.ones(classes.shape[0], dtype=bool)
+        if not np.any(allowed):
+            allowed = np.ones(classes.shape[0], dtype=bool)
+        allowed_indices = np.flatnonzero(allowed)
+        best_local = int(np.argmax(row[allowed_indices]))
+        best_idx = int(allowed_indices[best_local])
+        labels.append(str(classes[best_idx]))
+        confidences.append(float(row[best_idx]))
+    return labels, confidences
+
+
+def _top_k_lines(
+    classes: np.ndarray,
+    proba: np.ndarray,
+    vietnam_labels: list[str],
+    k: int = 3,
+) -> list[str]:
+    """Format top-k alternatives for each segmented character."""
+    lines: list[str] = []
+    for i, row in enumerate(proba):
+        top_idx = np.argsort(row)[::-1][:k]
+        top_text = ", ".join(f"{classes[idx]}:{row[idx]:.2f}" for idx in top_idx)
+        lines.append(f"#{i + 1}: raw={classes[top_idx[0]]} | VN-slot={vietnam_labels[i]} | top{k}: {top_text}")
+    return lines
 
 
 def _summary_text(

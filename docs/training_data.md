@@ -5,11 +5,13 @@ tries models in this order:
 
 ```text
 data/models/plate_synthetic_mlp.npz
+data/models/plate_zoning_templates.npz
 data/models/emnist_mlp.npz
 ```
 
-The recommended model is `plate_synthetic_mlp.npz`, trained from synthetic
-printed plate characters. EMNIST is kept as a fallback baseline.
+The GUI combines `plate_synthetic_mlp.npz` with
+`plate_zoning_templates.npz` when both are present. EMNIST is kept as a fallback
+baseline.
 
 ---
 
@@ -45,6 +47,16 @@ This command:
 4. extracts HOG + zoning features,
 5. trains the NumPy-only MLP classifier,
 6. saves `data/models/plate_synthetic_mlp.npz`.
+
+Train the zoning-template model:
+
+```bash
+python -m scripts.train_zoning_template
+```
+
+This implements fixed-region matching: each `32x32` glyph is split into an
+`8x8` grid, each grid cell stores the percentage of white pixels, and inference
+compares the character to stored synthetic templates.
 
 The bundled starter model was trained this way with a generated holdout
 accuracy of about 90%. It should be a better fit for printed plate characters
