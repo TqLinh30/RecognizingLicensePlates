@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- EMNIST downloader/parser for public OCR training data from NIST.
+- EMNIST MLP training script: `python -m scripts.train_emnist_mlp --download`.
+- MLP `.npz` save/load helpers and GUI auto-loading for `data/models/emnist_mlp.npz`.
+- Training-data documentation in `docs/training_data.md`.
+
 ## [0.4.0] - 2026-05-09
 
 ### Added

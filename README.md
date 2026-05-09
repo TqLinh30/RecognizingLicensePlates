@@ -52,6 +52,7 @@ RecognizingLicensePlates/
 │   ├── features/               # Step 5: HOG + zoning descriptors
 │   ├── classifiers/            # Step 6: KNN baseline + NumPy MLP
 │   ├── recognition/            # Step 7: end-to-end orchestration + postprocessing
+│   ├── datasets/               # EMNIST downloader and IDX parser
 │   ├── gui/                    # Desktop GUI for selecting and analyzing images
 │   └── utils/                  # Image I/O and debug visualization helpers
 ├── tests/
@@ -66,12 +67,15 @@ RecognizingLicensePlates/
 │   ├── step1_preprocessing.md
 │   ├── step2_detection.md
 │   ├── step3_to_step7_recognition.md
+│   ├── training_data.md
 │   ├── commitflow.md
 │   └── gitflow.md
 ├── data/
 │   ├── samples/
 │   ├── output/
 │   └── models/
+├── scripts/
+│   └── train_emnist_mlp.py
 ├── requirements.txt
 ├── gui.py
 ├── CHANGELOG.md
@@ -114,8 +118,17 @@ python -m src.gui.app
 
 The GUI lets you choose an image from your computer and displays each
 intermediate stage: preprocessing, plate detection, normalization, character
-segmentation, and feature extraction. Final OCR text requires a trained
-classifier model; the GUI reports that status explicitly.
+segmentation, feature extraction, and OCR if a trained model exists.
+
+Train the starter EMNIST OCR model:
+
+```bash
+python -m scripts.train_emnist_mlp --download
+```
+
+This saves `data/models/emnist_mlp.npz`; the GUI loads it automatically. See
+[`docs/training_data.md`](docs/training_data.md) for details and faster training
+options.
 
 Step 1 preprocessing demo:
 
