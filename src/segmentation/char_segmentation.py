@@ -158,7 +158,13 @@ def segment_characters(
     if len(anchors) < cfg.fallback_min_anchor_count and cfg.use_adaptive_threshold:
         fallback_binary = _adaptive_anchor_fallback(plate_gray, cfg)
         fallback_cc = connected_components(fallback_binary, connectivity=cfg.connectivity)
-        relaxed_cfg = SegmentationConfig(**{**cfg.__dict__, "reject_border_touching": False})
+        relaxed_cfg = SegmentationConfig(
+            **{
+                **cfg.__dict__,
+                "min_height_ratio": min(cfg.min_height_ratio, 0.20),
+                "reject_border_touching": False,
+            }
+        )
         fallback_anchors = [
             comp
             for comp in fallback_cc.stats

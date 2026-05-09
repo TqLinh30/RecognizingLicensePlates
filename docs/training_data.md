@@ -82,6 +82,12 @@ preprocess -> detection -> normalization -> segmentation pipeline for the
 bundled sample images, validates glyph count against the label, and stores each
 real `32x32` glyph crop in `data/models/plate_sample_templates.npz`.
 
+When adding a new image to `data/samples`, add its format-free OCR target to
+the JSON label file first, then refresh this template model and run
+`python -m scripts.evaluate_samples`. The evaluator treats every labeled file
+as a regression case, so a new sample should not stay as a manual-only GUI
+check.
+
 This is still character-level OCR, not plate-format correction: the model learns
 individual glyph templates from real sample images and the GUI blends them with
 the broader synthetic models.

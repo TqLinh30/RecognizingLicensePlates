@@ -113,19 +113,24 @@ def _option_from_normalization(
     )
 
 
-def _plate_region_score(option: PlateRegionOption) -> tuple[int, float, int, float]:
+def _plate_region_score(option: PlateRegionOption) -> tuple[float, float, float]:
     """
     Score candidates by segmentation usefulness, then detector confidence.
 
-    Character count is the strongest evidence.  Counts between 5 and 8
-    cover the bundled one-line and two-line examples.  Higher counts are
-    possible in the wild, but in this classical detector they are often
-    grille bars split into many false glyphs, so they are ranked below a
-    clean 5-8 character candidate.
+    A usable region needs a plausible character count, should not touch
+    image borders, and should still respect the detector's geometric
+    confidence.  The count score is deliberately not absolute: a strong
+    five-character plate such as ``LX570`` must beat a weak false region
+    that happens to split into eight grille-like blobs.
     """
     count = len(option.segmentation.characters)
     if 5 <= count <= 8:
-        return (2, float(count), -int(option.touches_image_border), option.detection_score)
-    if 9 <= count <= 10:
-        return (1, float(10 - count), -int(option.touches_image_border), option.detection_score)
-    return (0, float(count), -int(option.touches_image_border), option.detection_score)
+        count_score = 0.50 + 0.10 * (count - 5)
+    elif 9 <= count <= 10:
+        count_score = 0.35
+    else:
+        count_score = min(0.30, 0.05 * count)
+
+    border_penalty = 0.60 if option.touches_image_border else 0.0
+    total = count_score + option.detection_score - border_penalty
+    return (total, count_score, option.detection_score)
