@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-05-09
+
+### Added
+
+- Real-image sample OCR labels and sample-template training script:
+  `python -m scripts.train_sample_templates`.
+- Real-image sample benchmark command: `python -m scripts.evaluate_samples`.
+- Bundled `data/models/plate_sample_templates.npz`, trained from labeled
+  glyph crops in `data/samples`.
+- End-to-end benchmark test that checks `plate1.jpg`, `plate2.jpg`, and
+  `plate3.jpg` return the expected raw OCR strings.
+
+### Changed
+
+- GUI OCR ensemble now gives highest weight to the real-sample template model
+  when it is available.
+
+### Fixed
+
+- Character slot boundaries now respect neighbouring midpoints, preventing
+  close pairs such as `70` from bleeding into each other during Step 4.2.
+
 ## [0.9.0] - 2026-05-09
 
 ### Fixed

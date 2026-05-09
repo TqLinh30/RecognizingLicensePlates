@@ -5,14 +5,16 @@ tries models in this order:
 
 ```text
 data/models/plate_synthetic_mlp.npz
+data/models/plate_sample_templates.npz
 data/models/plate_pixel_templates.npz
 data/models/plate_zoning_templates.npz
 data/models/emnist_mlp.npz
 ```
 
-The GUI combines the synthetic MLP, raw pixel templates, and zoning templates
-when they are present. It reports **raw character OCR only**; no country-specific
-format is applied. EMNIST is kept as a fallback baseline.
+The GUI combines the synthetic MLP, real sample templates, raw pixel templates,
+and zoning templates when they are present. It reports **raw character OCR
+only**; no country-specific format is applied. EMNIST is kept as a fallback
+baseline.
 
 ---
 
@@ -68,6 +70,27 @@ python -m scripts.train_pixel_template
 This stores real `32x32` binary glyph templates and compares the segmented crop
 directly against them. It is the most literal template-matching classifier in
 the project.
+
+Train the real sample-template model:
+
+```bash
+python -m scripts.train_sample_templates
+```
+
+Labels live in `data/labels/sample_ocr_labels.json`. This script runs the full
+preprocess -> detection -> normalization -> segmentation pipeline for the
+bundled sample images, validates glyph count against the label, and stores each
+real `32x32` glyph crop in `data/models/plate_sample_templates.npz`.
+
+This is still character-level OCR, not plate-format correction: the model learns
+individual glyph templates from real sample images and the GUI blends them with
+the broader synthetic models.
+
+Evaluate the bundled sample images:
+
+```bash
+python -m scripts.evaluate_samples
+```
 
 The bundled starter model was trained this way with a generated holdout
 accuracy of about 90%. It should be a better fit for printed plate characters
