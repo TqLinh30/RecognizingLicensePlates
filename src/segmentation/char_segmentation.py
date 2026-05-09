@@ -386,6 +386,8 @@ def _slot_x_bounds(
     """
     anchor = row[index]
     centers = [comp.cx for comp in row]
+    hard_left = 0.0
+    hard_right = float(image_width)
 
     if len(row) == 1:
         pitch = max(anchor.width * (1.0 + 2.0 * cfg.padding_ratio), anchor.height * cfg.slot_min_width_to_height)
@@ -396,13 +398,15 @@ def _slot_x_bounds(
             pitch = centers[1] - centers[0]
             left = anchor.cx - pitch / 2.0
         else:
-            left = (centers[index - 1] + centers[index]) / 2.0
+            hard_left = (centers[index - 1] + centers[index]) / 2.0
+            left = hard_left
 
         if index == len(row) - 1:
             pitch = centers[-1] - centers[-2]
             right = anchor.cx + pitch / 2.0
         else:
-            right = (centers[index] + centers[index + 1]) / 2.0
+            hard_right = (centers[index] + centers[index + 1]) / 2.0
+            right = hard_right
 
     min_width = max(
         anchor.width * (1.0 + 2.0 * cfg.padding_ratio),
@@ -413,9 +417,17 @@ def _slot_x_bounds(
         left = center - min_width / 2.0
         right = center + min_width / 2.0
 
-    # Always include the anchor itself plus a tiny safety margin.
-    left = min(left, anchor.x - 1)
-    right = max(right, anchor.x + anchor.width + 1)
+    # Respect neighbour midpoints.  Expanding a slot across the midpoint
+    # is what makes tight pairs such as "70" bleed into each other.
+    left = max(left, hard_left)
+    right = min(right, hard_right)
+
+    # For the outermost slots there is no neighbouring midpoint on one
+    # side, so include the anchor itself plus a tiny safety margin.
+    if index == 0:
+        left = min(left, anchor.x - 1)
+    if index == len(row) - 1:
+        right = max(right, anchor.x + anchor.width + 1)
 
     x0 = max(0, int(np.floor(left)))
     x1 = min(image_width, int(np.ceil(right)))

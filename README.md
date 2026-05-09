@@ -125,6 +125,7 @@ The repository includes a starter printed-character OCR model:
 
 ```text
 data/models/plate_synthetic_mlp.npz
+data/models/plate_sample_templates.npz
 data/models/plate_pixel_templates.npz
 data/models/plate_zoning_templates.npz
 ```
@@ -133,6 +134,7 @@ Train or refresh it:
 
 ```bash
 python -m scripts.train_synthetic_mlp
+python -m scripts.train_sample_templates
 python -m scripts.train_pixel_template
 python -m scripts.train_zoning_template
 ```
@@ -142,6 +144,12 @@ EMNIST training is still available as a fallback with
 `python -m scripts.train_emnist_mlp --download`. See
 [`docs/training_data.md`](docs/training_data.md) for details and faster training
 options.
+
+Run the bundled real-image benchmark:
+
+```bash
+python -m scripts.evaluate_samples
+```
 
 Step 1 preprocessing demo:
 

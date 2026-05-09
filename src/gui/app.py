@@ -44,14 +44,17 @@ from src.utils.image_io import load_image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SYNTHETIC_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "plate_synthetic_mlp.npz"
+SAMPLE_TEMPLATE_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "plate_sample_templates.npz"
 PIXEL_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "plate_pixel_templates.npz"
 ZONING_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "plate_zoning_templates.npz"
 EMNIST_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "emnist_mlp.npz"
 DEFAULT_MODEL_PATHS = [SYNTHETIC_MODEL_PATH, EMNIST_MODEL_PATH]
-PIXEL_WEIGHT = 0.65
-ZONING_WEIGHT = 0.10
-MLP_WEIGHT = 0.25
+SAMPLE_TEMPLATE_WEIGHT = 0.72
+PIXEL_WEIGHT = 0.18
+ZONING_WEIGHT = 0.03
+MLP_WEIGHT = 0.07
 TRAIN_COMMAND = "python -m scripts.train_synthetic_mlp"
+SAMPLE_TEMPLATE_TRAIN_COMMAND = "python -m scripts.train_sample_templates"
 PIXEL_TRAIN_COMMAND = "python -m scripts.train_pixel_template"
 ZONING_TRAIN_COMMAND = "python -m scripts.train_zoning_template"
 
@@ -560,6 +563,23 @@ def _classify_with_default_model(
                 ),
             )
 
+    if SAMPLE_TEMPLATE_MODEL_PATH.is_file():
+        try:
+            sample_model = load_pixel_template_model(SAMPLE_TEMPLATE_MODEL_PATH)
+            sample_proba = sample_model.predict_proba(char_images)
+            sample_classes = np.asarray(sample_model.classes_).astype(str)
+            model_outputs.append((str(SAMPLE_TEMPLATE_MODEL_PATH), sample_classes, sample_proba, SAMPLE_TEMPLATE_WEIGHT))
+        except Exception as exc:
+            return (
+                None,
+                (
+                    f"Found real-sample template model: {SAMPLE_TEMPLATE_MODEL_PATH}\n"
+                    f"But real-sample template prediction failed: {exc}\n\n"
+                    "Re-train the model with:\n"
+                    f"{SAMPLE_TEMPLATE_TRAIN_COMMAND}"
+                ),
+            )
+
     if ZONING_MODEL_PATH.is_file():
         try:
             zoning_model = load_zoning_template_model(ZONING_MODEL_PATH)
@@ -605,9 +625,12 @@ def _classifier_missing_message() -> str:
     return (
         "No trained OCR model found at any of:\n"
         + "\n".join(str(path) for path in DEFAULT_MODEL_PATHS)
+        + f"\n{SAMPLE_TEMPLATE_MODEL_PATH}"
         + f"\n{PIXEL_MODEL_PATH}"
         + f"\n{ZONING_MODEL_PATH}"
-        + "\n\nTrain the recommended raw pixel-template model with:\n"
+        + "\n\nTrain the real-sample template model with:\n"
+        f"{SAMPLE_TEMPLATE_TRAIN_COMMAND}\n\n"
+        "Train the raw pixel-template model with:\n"
         f"{PIXEL_TRAIN_COMMAND}\n\n"
         "Train the synthetic MLP model with:\n"
         f"{TRAIN_COMMAND}\n\n"
