@@ -14,12 +14,10 @@ intermediate result:
 3. plate normalization,
 4. character segmentation,
 5. feature extraction summary,
-6. classifier status.
+6. classifier prediction when ``data/models/emnist_mlp.npz`` exists.
 
-The project does not ship a trained character classifier yet, so the GUI
-does not pretend to recognize final text.  It clearly reports that Step 6
-needs a fitted KNN/MLP model while still showing all earlier visual
-outputs.
+If the model file is missing, the GUI shows the exact training command
+needed to download EMNIST and build the starter OCR model.
 """
 
 from __future__ import annotations
@@ -35,12 +33,19 @@ from PIL import Image, ImageTk
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from src.classifiers import load_mlp_model
 from src.detection import detect_plate, draw_candidates
 from src.features import extract_batch_features, feature_length
 from src.normalization import normalize_plate
 from src.preprocessing import preprocess
+from src.recognition import postprocess_predictions
 from src.segmentation import draw_character_boxes, segment_characters
 from src.utils.image_io import load_image
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "emnist_mlp.npz"
+TRAIN_COMMAND = "python -m scripts.train_emnist_mlp --download"
 
 
 # ---------------------------------------------------------------------------
@@ -203,8 +208,8 @@ class LicensePlateApp:
         self._set_summary(
             "Ready.\n\n"
             "Click 'Choose Image' to select a photo from your computer.\n\n"
-            "Note: the repository currently includes the full vision pipeline, "
-            "but it does not include a trained OCR classifier model yet."
+            "If data/models/emnist_mlp.npz exists, the app will also run OCR. "
+            f"If it is missing, train it with:\n{TRAIN_COMMAND}"
         )
 
     def choose_image(self) -> None:
@@ -448,6 +453,7 @@ def analyze_image(path: Path) -> AnalysisOutput:
         )
 
     feature_summary = None
+    features = None
     if seg.characters:
         # Step 5 - feature extraction.
         features = extract_batch_features(char.normalized for char in seg.characters)
@@ -473,16 +479,15 @@ def analyze_image(path: Path) -> AnalysisOutput:
             )
         )
 
-    # Step 6/7 - final classifier status.
+    # Step 6/7 - classifier prediction when a trained model exists.
+    final_text = None
+    classifier_detail = _classifier_missing_message()
+    if features is not None:
+        final_text, classifier_detail = _classify_with_default_model(features)
     stages.append(
         StageOutput(
             "Step 6-7 - Classification & Post-processing",
-            (
-                "No trained classifier model is bundled yet.\n"
-                "The GUI has completed detection, normalization, segmentation, and feature extraction. "
-                "To output final plate text, train KNNClassifier or MLPClassifier on labeled character data "
-                "and plug it into the recognition pipeline."
-            ),
+            classifier_detail,
         )
     )
 
@@ -493,8 +498,61 @@ def analyze_image(path: Path) -> AnalysisOutput:
         norm.angle_degrees,
         len(seg.characters),
         feature_summary,
+        final_text,
     )
     return AnalysisOutput(path=path, summary=summary, stages=stages)
+
+
+def _classify_with_default_model(features: np.ndarray) -> tuple[Optional[str], str]:
+    """
+    Load the default EMNIST MLP model and classify segmented characters.
+
+    Returns ``(final_text, detail)``.  If the model is missing or
+    incompatible, ``final_text`` is ``None`` and ``detail`` explains how
+    to fix the situation without failing the whole GUI analysis.
+    """
+    if not DEFAULT_MODEL_PATH.is_file():
+        return None, _classifier_missing_message()
+
+    try:
+        model = load_mlp_model(DEFAULT_MODEL_PATH)
+        proba = model.predict_proba(features)
+        classes = np.asarray(model.classes_).astype(str)
+        indices = np.argmax(proba, axis=1)
+        labels = classes[indices].tolist()
+        confidences = np.max(proba, axis=1).astype(float).tolist()
+        post = postprocess_predictions(labels, confidences)
+    except Exception as exc:
+        return (
+            None,
+            (
+                f"Found model: {DEFAULT_MODEL_PATH}\n"
+                f"But prediction failed: {exc}\n\n"
+                "Re-train the model with:\n"
+                f"{TRAIN_COMMAND}"
+            ),
+        )
+
+    lines = [
+        f"Model: {DEFAULT_MODEL_PATH}",
+        f"Raw classifier output: {post.raw_text}",
+        f"Corrected compact text: {post.corrected_text}",
+        f"Formatted result: {post.formatted_text}",
+        f"Average confidence: {post.average_confidence:.3f}",
+    ]
+    if post.low_confidence_indices:
+        lines.append(f"Low-confidence character indices: {post.low_confidence_indices}")
+    return post.formatted_text, "\n".join(lines)
+
+
+def _classifier_missing_message() -> str:
+    """Message shown when no trained OCR model is available."""
+    return (
+        f"No trained OCR model found at:\n{DEFAULT_MODEL_PATH}\n\n"
+        "Train a starter EMNIST model with:\n"
+        f"{TRAIN_COMMAND}\n\n"
+        "After training, run the GUI again. It will load the model automatically."
+    )
 
 
 def _summary_text(
@@ -504,6 +562,7 @@ def _summary_text(
     angle: Optional[float],
     char_count: Optional[int],
     feature_summary: Optional[str],
+    final_text: Optional[str] = None,
 ) -> str:
     """Build the left-panel text summary."""
     lines = [
@@ -530,7 +589,7 @@ def _summary_text(
                 f"Step 3: normalized, skew angle = {angle:.2f} deg",
                 f"Step 4: {char_count or 0} character candidate(s)",
                 "Step 5: features extracted" if feature_summary else "Step 5: skipped",
-                "Step 6-7: waiting for trained classifier model",
+                f"Step 6-7: OCR result = {final_text}" if final_text else "Step 6-7: waiting for trained classifier model",
             ]
         )
     if feature_summary:
