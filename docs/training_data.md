@@ -5,13 +5,14 @@ tries models in this order:
 
 ```text
 data/models/plate_synthetic_mlp.npz
+data/models/plate_pixel_templates.npz
 data/models/plate_zoning_templates.npz
 data/models/emnist_mlp.npz
 ```
 
-The GUI combines `plate_synthetic_mlp.npz` with
-`plate_zoning_templates.npz` when both are present. EMNIST is kept as a fallback
-baseline.
+The GUI combines the synthetic MLP, raw pixel templates, and zoning templates
+when they are present. It reports **raw character OCR only**; no country-specific
+format is applied. EMNIST is kept as a fallback baseline.
 
 ---
 
@@ -57,6 +58,16 @@ python -m scripts.train_zoning_template
 This implements fixed-region matching: each `32x32` glyph is split into an
 `8x8` grid, each grid cell stores the percentage of white pixels, and inference
 compares the character to stored synthetic templates.
+
+Train the raw pixel-template model:
+
+```bash
+python -m scripts.train_pixel_template
+```
+
+This stores real `32x32` binary glyph templates and compares the segmented crop
+directly against them. It is the most literal template-matching classifier in
+the project.
 
 The bundled starter model was trained this way with a generated holdout
 accuracy of about 90%. It should be a better fit for printed plate characters

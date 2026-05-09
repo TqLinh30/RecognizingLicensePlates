@@ -91,7 +91,7 @@ class TestRecognitionPipeline:
         assert result.found_characters
         assert len(result.segmentation.characters) == 7
         assert result.raw_text == "30A1234"
-        assert result.text == "30A-1234"
+        assert result.text == "30A1234"
         assert min(result.confidences) > 0.90
 
     def test_pipeline_rejects_classifier_without_proba(self):

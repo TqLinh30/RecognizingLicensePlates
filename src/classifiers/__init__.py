@@ -13,6 +13,11 @@ from src.classifiers.zoning_template import (
     load_zoning_template_model,
     save_zoning_template_model,
 )
+from src.classifiers.pixel_template import (
+    PixelTemplateClassifier,
+    load_pixel_template_model,
+    save_pixel_template_model,
+)
 
 __all__ = [
     "KNNClassifier",
@@ -23,4 +28,7 @@ __all__ = [
     "ZoningTemplateClassifier",
     "load_zoning_template_model",
     "save_zoning_template_model",
+    "PixelTemplateClassifier",
+    "load_pixel_template_model",
+    "save_pixel_template_model",
 ]
