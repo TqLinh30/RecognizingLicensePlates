@@ -104,6 +104,8 @@ git branch -d hotfix/fix-grayscale-overflow
 
 ## Commit message convention
 
+For the full atomic-commit workflow, see [`docs/commitflow.md`](commitflow.md).
+
 ```
 <type>(<scope>): <subject>
 

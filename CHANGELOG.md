@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Commit flow documentation in `docs/commitflow.md`, covering atomic commits,
+  Conventional Commit scopes, verification, and release commit order.
+
 ## [0.3.0] - 2026-05-09
 
 ### Added
