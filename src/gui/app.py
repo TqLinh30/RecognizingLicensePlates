@@ -441,8 +441,8 @@ def analyze_image(path: Path) -> AnalysisOutput:
         [
             StageOutput(
                 "Step 4.1 - Character Binary Cleanup",
-                "Otsu thresholding and morphology cleanup before connected components.",
-                seg.cleaned,
+                "Otsu anchors plus local adaptive thresholding for faint detached character strokes.",
+                seg.binary,
             ),
             StageOutput(
                 "Step 4.2 - Character Boxes",

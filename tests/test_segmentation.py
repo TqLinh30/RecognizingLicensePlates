@@ -7,15 +7,24 @@ Unit tests for Step 4 character segmentation.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
+from src.detection import detect_plate
+from src.normalization import normalize_plate
+from src.preprocessing import preprocess
 from src.segmentation import (
     SegmentationConfig,
     clean_character_crop,
     normalize_character,
     segment_characters,
 )
+from src.utils.image_io import load_image
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _synthetic_plate(chars: int = 7) -> np.ndarray:
@@ -94,6 +103,37 @@ class TestCharacterSegmentation:
         assert cleaned[0:2].sum() == 0
         assert cleaned[38:40].sum() == 0
         assert cleaned[8:34, 12:16].sum() > 0
+
+    def test_slot_segmentation_keeps_detached_top_stroke(self):
+        plate = np.full((80, 160), 230, dtype=np.uint8)
+        # A broken "7": the top bar is separated from the diagonal body.
+        # Pure connected-component cropping keeps only the tall body; the
+        # slot crop should recover the detached bar before OCR.
+        plate[20:24, 55:72] = 60
+        for i, y in enumerate(range(25, 64)):
+            x = 68 - int(i * 0.22)
+            plate[y : y + 2, x : x + 5] = 25
+
+        result = segment_characters(plate)
+
+        assert len(result.characters) == 1
+        char = result.characters[0]
+        top_cols = np.flatnonzero(char.normalized[:10].sum(axis=0) > 0)
+        assert char.width >= 18
+        assert top_cols.size >= 4
+
+    def test_sample_plate2_keeps_wide_seven_slots(self):
+        image = load_image(PROJECT_ROOT / "data" / "samples" / "plate2.jpg")
+        pre = preprocess(image)
+        detection = detect_plate(pre.enhanced)
+        normalization = normalize_plate(pre.enhanced, detection.candidates[0])
+
+        result = segment_characters(normalization.normalized)
+
+        assert len(result.characters) == 8
+        seven_like_slots = result.characters[3:]
+        assert all(char.width >= 18 for char in seven_like_slots)
+        assert all(char.normalized[:10].sum() > 40 * 255 for char in seven_like_slots)
 
     def test_invalid_plate_dtype_rejected(self):
         with pytest.raises(ValueError):
