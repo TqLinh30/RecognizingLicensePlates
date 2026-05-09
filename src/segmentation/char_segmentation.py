@@ -48,6 +48,9 @@ class SegmentationConfig:
     slot_vertical_padding_ratio: float = 0.08
     related_fragment_min_area_ratio: float = 0.025
     related_fragment_min_x_overlap_ratio: float = 0.18
+    fallback_min_anchor_count: int = 7
+    suppress_dense_row_ratio: float = 0.60
+    suppress_dense_col_ratio: float = 0.50
     min_height_ratio: float = 0.32
     max_height_ratio: float = 0.95
     min_width_ratio: float = 0.015
@@ -152,6 +155,19 @@ def segment_characters(
         if _looks_like_character(comp, image_shape=(H, W), plate_area=plate_area, cfg=cfg)
     ]
     anchors = _prune_anchor_outliers(anchors)
+    if len(anchors) < cfg.fallback_min_anchor_count and cfg.use_adaptive_threshold:
+        fallback_binary = _adaptive_anchor_fallback(plate_gray, cfg)
+        fallback_cc = connected_components(fallback_binary, connectivity=cfg.connectivity)
+        relaxed_cfg = SegmentationConfig(**{**cfg.__dict__, "reject_border_touching": False})
+        fallback_anchors = [
+            comp
+            for comp in fallback_cc.stats
+            if _looks_like_character(comp, image_shape=(H, W), plate_area=plate_area, cfg=relaxed_cfg)
+        ]
+        fallback_anchors = _prune_anchor_outliers(fallback_anchors)
+        if len(fallback_anchors) > len(anchors):
+            anchors = fallback_anchors
+            binary = fallback_binary
 
     # A glyph can be split into multiple connected components after
     # thresholding.  A typical example is a faint top bar of "7": the
@@ -229,6 +245,48 @@ def _prune_anchor_outliers(anchors: list[ComponentStats]) -> list[ComponentStats
             continue
         pruned.append(comp)
     return pruned
+
+
+def _adaptive_anchor_fallback(
+    plate_gray: np.ndarray,
+    cfg: SegmentationConfig,
+) -> np.ndarray:
+    """
+    Build a fallback anchor mask for low-contrast characters near borders.
+
+    Some synthetic or tightly cropped samples place dark characters close
+    to a dark plate/background border.  Global Otsu merges those glyphs
+    into one huge border component.  The fallback uses only the local
+    adaptive mask, then suppresses dense horizontal/vertical border
+    lines before connected-component labeling.
+    """
+    adaptive = _adaptive_dark_threshold(
+        plate_gray,
+        window_size=_adaptive_window_size(plate_gray.shape, cfg),
+        offset=cfg.adaptive_offset,
+    )
+    return _suppress_dense_foreground_lines(
+        adaptive,
+        row_ratio=cfg.suppress_dense_row_ratio,
+        col_ratio=cfg.suppress_dense_col_ratio,
+    )
+
+
+def _suppress_dense_foreground_lines(
+    binary: np.ndarray,
+    row_ratio: float,
+    col_ratio: float,
+) -> np.ndarray:
+    """Remove likely plate-border rows/columns from a binary mask."""
+    out = binary.copy()
+    H, W = out.shape
+    if 0.0 < row_ratio < 1.0:
+        dense_rows = (out > 0).sum(axis=1) > row_ratio * W
+        out[dense_rows, :] = 0
+    if 0.0 < col_ratio < 1.0:
+        dense_cols = (out > 0).sum(axis=0) > col_ratio * H
+        out[:, dense_cols] = 0
+    return out
 
 
 def _adaptive_window_size(
