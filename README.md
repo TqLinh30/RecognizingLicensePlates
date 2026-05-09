@@ -65,6 +65,7 @@ RecognizingLicensePlates/
 │   ├── step1_preprocessing.md
 │   ├── step2_detection.md
 │   ├── step3_to_step7_recognition.md
+│   ├── commitflow.md
 │   └── gitflow.md
 ├── data/
 │   ├── samples/
@@ -162,6 +163,9 @@ feat(preprocessing): add Gaussian blur with separable kernel
 fix(clahe): correct tile boundary interpolation
 docs(step1): add Otsu derivation
 ```
+
+For the detailed atomic commit workflow, see
+[`docs/commitflow.md`](docs/commitflow.md).
 
 ---
 
