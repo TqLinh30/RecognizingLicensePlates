@@ -16,8 +16,8 @@ intermediate result:
 5. feature extraction summary,
 6. classifier prediction when ``data/models/emnist_mlp.npz`` exists.
 
-If the model file is missing, the GUI shows the exact training command
-needed to download EMNIST and build the starter OCR model.
+The preferred model is a synthetic printed-plate OCR model.  EMNIST is
+kept as a fallback baseline.
 """
 
 from __future__ import annotations
@@ -44,8 +44,10 @@ from src.utils.image_io import load_image
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "emnist_mlp.npz"
-TRAIN_COMMAND = "python -m scripts.train_emnist_mlp --download"
+SYNTHETIC_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "plate_synthetic_mlp.npz"
+EMNIST_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "emnist_mlp.npz"
+DEFAULT_MODEL_PATHS = [SYNTHETIC_MODEL_PATH, EMNIST_MODEL_PATH]
+TRAIN_COMMAND = "python -m scripts.train_synthetic_mlp"
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +210,7 @@ class LicensePlateApp:
         self._set_summary(
             "Ready.\n\n"
             "Click 'Choose Image' to select a photo from your computer.\n\n"
-            "If data/models/emnist_mlp.npz exists, the app will also run OCR. "
+            "If data/models/plate_synthetic_mlp.npz exists, the app will also run OCR. "
             f"If it is missing, train it with:\n{TRAIN_COMMAND}"
         )
 
@@ -447,7 +449,11 @@ def analyze_image(path: Path) -> AnalysisOutput:
         stages.append(
             StageOutput(
                 "Step 4.3 - Normalized Character Crops",
-                "Each detected character is centered on a 32x32 binary canvas.",
+                (
+                    "Each detected character is centered on a 32x32 binary canvas. "
+                    "This is the project-wide OCR input size; EMNIST 28x28 samples "
+                    "are also converted to 32x32 before feature extraction."
+                ),
                 char_strip,
             )
         )
@@ -511,11 +517,12 @@ def _classify_with_default_model(features: np.ndarray) -> tuple[Optional[str], s
     incompatible, ``final_text`` is ``None`` and ``detail`` explains how
     to fix the situation without failing the whole GUI analysis.
     """
-    if not DEFAULT_MODEL_PATH.is_file():
+    model_path = _find_default_model()
+    if model_path is None:
         return None, _classifier_missing_message()
 
     try:
-        model = load_mlp_model(DEFAULT_MODEL_PATH)
+        model = load_mlp_model(model_path)
         proba = model.predict_proba(features)
         classes = np.asarray(model.classes_).astype(str)
         indices = np.argmax(proba, axis=1)
@@ -526,7 +533,7 @@ def _classify_with_default_model(features: np.ndarray) -> tuple[Optional[str], s
         return (
             None,
             (
-                f"Found model: {DEFAULT_MODEL_PATH}\n"
+                f"Found model: {model_path}\n"
                 f"But prediction failed: {exc}\n\n"
                 "Re-train the model with:\n"
                 f"{TRAIN_COMMAND}"
@@ -534,7 +541,7 @@ def _classify_with_default_model(features: np.ndarray) -> tuple[Optional[str], s
         )
 
     lines = [
-        f"Model: {DEFAULT_MODEL_PATH}",
+        f"Model: {model_path}",
         f"Raw classifier output: {post.raw_text}",
         f"Corrected compact text: {post.corrected_text}",
         f"Formatted result: {post.formatted_text}",
@@ -548,11 +555,20 @@ def _classify_with_default_model(features: np.ndarray) -> tuple[Optional[str], s
 def _classifier_missing_message() -> str:
     """Message shown when no trained OCR model is available."""
     return (
-        f"No trained OCR model found at:\n{DEFAULT_MODEL_PATH}\n\n"
-        "Train a starter EMNIST model with:\n"
+        "No trained OCR model found at any of:\n"
+        + "\n".join(str(path) for path in DEFAULT_MODEL_PATHS)
+        + "\n\nTrain the recommended synthetic printed-character model with:\n"
         f"{TRAIN_COMMAND}\n\n"
         "After training, run the GUI again. It will load the model automatically."
     )
+
+
+def _find_default_model() -> Optional[Path]:
+    """Return the first available OCR model path in priority order."""
+    for path in DEFAULT_MODEL_PATHS:
+        if path.is_file():
+            return path
+    return None
 
 
 def _summary_text(
