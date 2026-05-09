@@ -52,6 +52,7 @@ RecognizingLicensePlates/
 │   ├── features/               # Step 5: HOG + zoning descriptors
 │   ├── classifiers/            # Step 6: KNN baseline + NumPy MLP
 │   ├── recognition/            # Step 7: end-to-end orchestration + postprocessing
+│   ├── gui/                    # Desktop GUI for selecting and analyzing images
 │   └── utils/                  # Image I/O and debug visualization helpers
 ├── tests/
 │   ├── test_preprocessing.py
@@ -72,6 +73,7 @@ RecognizingLicensePlates/
 │   ├── output/
 │   └── models/
 ├── requirements.txt
+├── gui.py
 ├── CHANGELOG.md
 └── README.md
 ```
@@ -97,6 +99,23 @@ source venv/bin/activate
 ---
 
 ## Usage
+
+Desktop GUI:
+
+```bash
+python gui.py
+```
+
+Or:
+
+```bash
+python -m src.gui.app
+```
+
+The GUI lets you choose an image from your computer and displays each
+intermediate stage: preprocessing, plate detection, normalization, character
+segmentation, and feature extraction. Final OCR text requires a trained
+classifier model; the GUI reports that status explicitly.
 
 Step 1 preprocessing demo:
 
