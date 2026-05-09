@@ -10,5 +10,5 @@ The aim is educational: to expose the underlying mathematics behind classical
 image processing pipelines.
 """
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 __author__ = "TqLinh30"
