@@ -5,7 +5,7 @@ pipeline.py
 End-to-end ALPR orchestration:
 
     preprocess -> detect plate -> normalize -> segment characters
-    -> extract features -> classify -> postprocess
+    -> extract features -> classify -> optional postprocess
 
 The pipeline deliberately accepts a classifier object instead of hiding
 training inside recognition.  Any classifier with ``predict_proba`` and
@@ -37,7 +37,7 @@ class RecognitionConfig:
     segmentation: SegmentationConfig = field(default_factory=SegmentationConfig)
     features: FeatureConfig = field(default_factory=FeatureConfig)
     min_confidence: float = 0.50
-    use_vietnam_format: bool = True
+    use_vietnam_format: bool = False
 
 
 @dataclass

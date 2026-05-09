@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-09
+
+### Added
+
+- Raw pixel-template OCR classifier and training script:
+  `python -m scripts.train_pixel_template`.
+- Bundled `data/models/plate_pixel_templates.npz` for format-free character
+  recognition.
+
+### Changed
+
+- GUI now reports only raw character OCR, with no Vietnam-format output or
+  VN-slot correction.
+- Recognition pipeline defaults to raw OCR instead of Vietnam-format
+  postprocessing.
+
 ## [0.7.0] - 2026-05-09
 
 ### Added
