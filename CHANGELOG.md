@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Synthetic printed-character OCR generator and trainer:
+  `python -m scripts.train_synthetic_mlp`.
+- Starter `data/models/plate_synthetic_mlp.npz` model, which the GUI prefers
+  over the EMNIST handwriting baseline.
+
+### Changed
+
+- GUI Step 4 text now explains that `32x32` is the project-wide OCR input size
+  and EMNIST `28x28` samples are converted to it.
+- Training-data docs now recommend synthetic printed characters over EMNIST.
+
 ## [0.5.0] - 2026-05-09
 
 ### Added
