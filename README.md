@@ -46,24 +46,36 @@ RecognizingLicensePlates/
 ├── src/
 │   ├── preprocessing/          # Step 1: image preprocessing
 │   │   ├── __init__.py
-│   │   ├── grayscale.py        # RGB → grayscale conversion
-│   │   ├── gaussian_blur.py    # Gaussian smoothing filter
-│   │   ├── median_filter.py    # Median filter for noise removal
-│   │   ├── histogram.py        # Histogram & equalization
-│   │   ├── clahe.py            # Contrast Limited Adaptive HE
-│   │   └── thresholding.py     # Otsu thresholding
+│   │   ├── grayscale.py
+│   │   ├── gaussian_blur.py
+│   │   ├── median_filter.py
+│   │   ├── histogram.py
+│   │   ├── clahe.py
+│   │   ├── thresholding.py
+│   │   ├── pipeline.py
+│   │   └── demo.py
+│   ├── detection/              # Step 2: plate detection
+│   │   ├── __init__.py
+│   │   ├── sobel.py            # Sobel-X gradient (separable)
+│   │   ├── morphology.py       # Dilation, erosion, opening, closing
+│   │   ├── connected_components.py  # Two-pass labeling + Union-Find
+│   │   ├── plate_detector.py   # Filter, score, rank candidates
+│   │   └── demo.py
 │   ├── utils/
 │   │   ├── __init__.py
 │   │   ├── image_io.py         # Image read/write via Pillow
 │   │   └── visualization.py    # Debug visualization helpers
 │   └── __init__.py
 ├── tests/
-│   └── test_preprocessing.py   # Unit tests for Step 1
+│   ├── test_preprocessing.py   # Unit tests for Step 1
+│   └── test_detection.py       # Unit tests for Step 2
 ├── data/
 │   ├── samples/                # Sample input images
 │   └── output/                 # Pipeline output
 ├── docs/
-│   └── step1_preprocessing.md  # Detailed documentation
+│   ├── step1_preprocessing.md
+│   ├── step2_detection.md
+│   └── gitflow.md
 ├── requirements.txt
 ├── .gitignore
 └── README.md
@@ -150,7 +162,7 @@ Output is saved under `data/output/`.
 ## Roadmap
 
 - [x] **Step 1**: Preprocessing (grayscale, blur, CLAHE, Otsu)
-- [ ] Step 2: License plate detection (Sobel + morphology + connected components)
+- [x] **Step 2**: License plate detection (Sobel + morphology + connected components)
 - [ ] Step 3: Plate cropping & normalization (Hough + affine transform)
 - [ ] Step 4: Character segmentation
 - [ ] Step 5: Feature extraction (HOG + zoning)
