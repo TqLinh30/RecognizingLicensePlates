@@ -36,12 +36,19 @@ Module:
 
 Pipeline:
 
-1. Apply Otsu thresholding with inversion so dark characters become white foreground.
-2. Optionally clean small noise with morphological opening.
-3. Run two-pass connected-component labeling.
-4. Filter components by height, width, area, fill ratio, and border contact.
-5. Sort components left-to-right, with a simple two-row split when vertical gaps are large.
-6. Normalize each character to a `32x32` binary canvas while preserving aspect ratio.
+1. Apply Otsu thresholding with inversion so dark characters become white
+   foreground for stable connected-component anchors.
+2. Build a second local adaptive threshold mask to recover faint or detached
+   glyph strokes under uneven illumination.
+3. Run two-pass connected-component labeling on the Otsu anchor mask.
+4. Filter anchors by height, width, area, fill ratio, border contact, and
+   relative outlier checks.
+5. Estimate a character slot around each anchor from neighbouring anchor
+   centres, then keep related detached fragments inside the slot.
+6. Sort candidates left-to-right, with a simple two-row split when vertical
+   gaps are large.
+7. Normalize each character to a `32x32` binary canvas while preserving aspect
+   ratio.
 
 ---
 

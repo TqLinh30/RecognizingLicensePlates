@@ -38,7 +38,16 @@ class SegmentationConfig:
     char_shape: tuple[int, int] = (32, 32)  # (height, width)
     padding_ratio: float = 0.18
     connectivity: int = 8
-    cleanup_opening_kernel: tuple[int, int] | None = (2, 2)
+    cleanup_opening_kernel: tuple[int, int] | None = None
+    use_adaptive_threshold: bool = True
+    adaptive_window_ratio: float = 0.26
+    adaptive_min_window: int = 15
+    adaptive_offset: float = 15.0
+    combine_otsu_threshold: bool = True
+    slot_min_width_to_height: float = 0.40
+    slot_vertical_padding_ratio: float = 0.08
+    related_fragment_min_area_ratio: float = 0.025
+    related_fragment_min_x_overlap_ratio: float = 0.18
     min_height_ratio: float = 0.32
     max_height_ratio: float = 0.95
     min_width_ratio: float = 0.015
@@ -122,38 +131,35 @@ def segment_characters(
     H, W = plate_gray.shape
     plate_area = H * W
 
-    # Dark glyphs become foreground (255).  This convention matches the
-    # morphology and feature extraction modules.
-    binary, _ = otsu_threshold(plate_gray, invert=True)
+    # Dark glyphs become foreground (255).  Otsu is used for the anchor
+    # connected components because it produces cleaner component geometry
+    # than local thresholding near plate borders.  The adaptive mask is
+    # used later for the actual glyph crop so faint detached strokes can
+    # still be recovered.
+    anchor_binary, _ = otsu_threshold(plate_gray, invert=True)
+    binary = _make_character_binary(plate_gray, cfg, otsu_binary=anchor_binary)
 
     if cfg.cleanup_opening_kernel is not None:
         kh, kw = cfg.cleanup_opening_kernel
-        cleaned = opening(binary, rect(kh, kw))
+        cleaned = opening(anchor_binary, rect(kh, kw))
     else:
-        cleaned = binary.copy()
+        cleaned = anchor_binary.copy()
 
     cc = connected_components(cleaned, connectivity=cfg.connectivity)
+    anchors = [
+        comp
+        for comp in cc.stats
+        if _looks_like_character(comp, image_shape=(H, W), plate_area=plate_area, cfg=cfg)
+    ]
+    anchors = _prune_anchor_outliers(anchors)
 
-    raw_chars: list[CharacterCandidate] = []
-    for comp in cc.stats:
-        if not _looks_like_character(comp, image_shape=(H, W), plate_area=plate_area, cfg=cfg):
-            continue
-        char_img = _crop_component(cleaned, comp, cfg.padding_ratio)
-        if cfg.keep_largest_glyph_component:
-            char_img = clean_character_crop(char_img)
-        normalized = normalize_character(char_img, target_shape=cfg.char_shape)
-        raw_chars.append(
-            CharacterCandidate(
-                x=comp.x,
-                y=comp.y,
-                width=comp.width,
-                height=comp.height,
-                image=char_img,
-                normalized=normalized,
-                row_index=0,
-                component=comp,
-            )
-        )
+    # A glyph can be split into multiple connected components after
+    # thresholding.  A typical example is a faint top bar of "7": the
+    # main diagonal stroke is a valid tall component, but the top bar is
+    # a short detached fragment and would be discarded by pure CCL.  We
+    # therefore use tall components as anchors, then crop a character
+    # slot around each anchor and keep related fragments inside it.
+    raw_chars = _build_slot_candidates(binary, anchors, image_shape=(H, W), cfg=cfg)
 
     ordered = _assign_rows_and_sort(raw_chars, plate_height=H, cfg=cfg)
 
@@ -164,6 +170,318 @@ def segment_characters(
         characters=ordered,
         config=cfg,
     )
+
+
+def _make_character_binary(
+    plate_gray: np.ndarray,
+    cfg: SegmentationConfig,
+    otsu_binary: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """
+    Binarize a normalized plate for character segmentation.
+
+    Global Otsu works when the whole plate has one clean foreground and
+    background distribution.  Real crops often have grill shadows,
+    reflections, or one side of a character brighter than another, so a
+    local mean threshold is used as the primary cue.  When configured,
+    the Otsu mask is OR-ed back in as a conservative fallback.
+    """
+    if otsu_binary is None:
+        otsu_binary, _ = otsu_threshold(plate_gray, invert=True)
+    if not cfg.use_adaptive_threshold:
+        return otsu_binary
+
+    window = _adaptive_window_size(plate_gray.shape, cfg)
+    adaptive = _adaptive_dark_threshold(
+        plate_gray,
+        window_size=window,
+        offset=cfg.adaptive_offset,
+    )
+    if cfg.combine_otsu_threshold:
+        return np.maximum(otsu_binary, adaptive)
+    return adaptive
+
+
+def _prune_anchor_outliers(anchors: list[ComponentStats]) -> list[ComponentStats]:
+    """
+    Drop skinny low-area components that match plate borders, not glyphs.
+
+    This pass is intentionally relative to the detected text row.  A
+    true "1" can be narrow, but it still has area close to the other
+    character anchors.  Border slivers tend to be both much narrower and
+    much smaller than the median anchor.
+    """
+    if len(anchors) < 3:
+        return anchors
+
+    widths = np.array([comp.width for comp in anchors], dtype=np.float32)
+    areas = np.array([comp.area for comp in anchors], dtype=np.float32)
+    median_width = float(np.median(widths))
+    median_area = float(np.median(areas))
+    if median_width <= 0 or median_area <= 0:
+        return anchors
+
+    pruned: list[ComponentStats] = []
+    for comp in anchors:
+        very_skinny = comp.width < 0.45 * median_width
+        very_small = comp.area < 0.40 * median_area
+        if very_skinny and very_small:
+            continue
+        pruned.append(comp)
+    return pruned
+
+
+def _adaptive_window_size(
+    image_shape: tuple[int, int],
+    cfg: SegmentationConfig,
+) -> int:
+    """Return an odd local-threshold window size tied to plate height."""
+    H, W = image_shape
+    base = int(round(H * cfg.adaptive_window_ratio))
+    window = max(cfg.adaptive_min_window, base)
+    window = min(window, max(3, H if H % 2 == 1 else H - 1), max(3, W if W % 2 == 1 else W - 1))
+    if window % 2 == 0:
+        window -= 1
+    return max(3, window)
+
+
+def _adaptive_dark_threshold(
+    gray: np.ndarray,
+    window_size: int,
+    offset: float,
+) -> np.ndarray:
+    """
+    Threshold dark text against a local mean image.
+
+    A pixel becomes foreground when it is at least ``offset`` intensity
+    levels darker than its local neighbourhood.  The local mean is
+    computed with an integral image, so the implementation remains
+    deterministic and fast without relying on OpenCV.
+    """
+    if window_size <= 0 or window_size % 2 == 0:
+        raise ValueError(f"window_size must be a positive odd integer; got {window_size}.")
+
+    arr = gray.astype(np.float32, copy=False)
+    H, W = arr.shape
+    radius = window_size // 2
+
+    integral = np.pad(arr, ((1, 0), (1, 0)), mode="constant").cumsum(axis=0).cumsum(axis=1)
+    ones = np.ones((H, W), dtype=np.float32)
+    count_integral = np.pad(ones, ((1, 0), (1, 0)), mode="constant").cumsum(axis=0).cumsum(axis=1)
+
+    y = np.arange(H)
+    x = np.arange(W)
+    y0 = np.maximum(0, y - radius)
+    y1 = np.minimum(H, y + radius + 1)
+    x0 = np.maximum(0, x - radius)
+    x1 = np.minimum(W, x + radius + 1)
+
+    sums = (
+        integral[y1[:, None], x1[None, :]]
+        - integral[y0[:, None], x1[None, :]]
+        - integral[y1[:, None], x0[None, :]]
+        + integral[y0[:, None], x0[None, :]]
+    )
+    counts = (
+        count_integral[y1[:, None], x1[None, :]]
+        - count_integral[y0[:, None], x1[None, :]]
+        - count_integral[y1[:, None], x0[None, :]]
+        + count_integral[y0[:, None], x0[None, :]]
+    )
+    local_mean = sums / counts
+    return ((arr < (local_mean - offset)).astype(np.uint8)) * 255
+
+
+def _build_slot_candidates(
+    binary: np.ndarray,
+    anchors: list[ComponentStats],
+    image_shape: tuple[int, int],
+    cfg: SegmentationConfig,
+) -> list[CharacterCandidate]:
+    """
+    Build character crops from tall anchor components and slot boxes.
+
+    Connected components are excellent for finding the main vertical or
+    diagonal body of a glyph.  They are not sufficient as final crop
+    boxes, because thin strokes may detach.  Slot boxes use neighbour
+    spacing to recover the full character region before normalization.
+    """
+    if not anchors:
+        return []
+
+    H, W = image_shape
+    characters: list[CharacterCandidate] = []
+    for row in _group_anchor_rows(anchors, plate_height=H, cfg=cfg):
+        row_sorted = sorted(row, key=lambda comp: comp.cx)
+        heights = np.array([comp.height for comp in row_sorted], dtype=np.float32)
+        median_height = float(np.median(heights)) if heights.size else 1.0
+        y_pad = max(1, int(round(median_height * cfg.slot_vertical_padding_ratio)))
+        row_y0 = max(0, min(comp.y for comp in row_sorted) - y_pad)
+        row_y1 = min(H, max(comp.y + comp.height for comp in row_sorted) + y_pad)
+
+        for index, anchor in enumerate(row_sorted):
+            x0, x1 = _slot_x_bounds(row_sorted, index, image_width=W, cfg=cfg)
+            slot = binary[row_y0:row_y1, x0:x1]
+            glyph = _related_slot_glyph(
+                slot,
+                anchor=anchor,
+                slot_origin=(x0, row_y0),
+                cfg=cfg,
+            )
+            if not np.any(glyph):
+                continue
+            normalized = normalize_character(glyph, target_shape=cfg.char_shape)
+            characters.append(
+                CharacterCandidate(
+                    x=x0,
+                    y=row_y0,
+                    width=x1 - x0,
+                    height=row_y1 - row_y0,
+                    image=glyph,
+                    normalized=normalized,
+                    row_index=0,
+                    component=anchor,
+                )
+            )
+
+    return characters
+
+
+def _group_anchor_rows(
+    anchors: list[ComponentStats],
+    plate_height: int,
+    cfg: SegmentationConfig,
+) -> list[list[ComponentStats]]:
+    """Group anchor components into one or two text rows before slotting."""
+    if len(anchors) <= 1:
+        return [anchors]
+
+    by_y = sorted(anchors, key=lambda comp: comp.cy)
+    centers = np.array([comp.cy for comp in by_y], dtype=np.float32)
+    gaps = np.diff(centers)
+    if gaps.size == 0:
+        return [by_y]
+
+    largest_gap_idx = int(np.argmax(gaps))
+    largest_gap = float(gaps[largest_gap_idx])
+    if largest_gap >= cfg.two_line_gap_ratio * plate_height:
+        split = largest_gap_idx + 1
+        return [by_y[:split], by_y[split:]]
+    return [by_y]
+
+
+def _slot_x_bounds(
+    row: list[ComponentStats],
+    index: int,
+    image_width: int,
+    cfg: SegmentationConfig,
+) -> tuple[int, int]:
+    """
+    Estimate horizontal character-slot boundaries from neighbouring anchors.
+
+    Midpoints between adjacent anchor centres prevent separator dots or
+    inter-character whitespace from becoming standalone glyphs, while a
+    minimum width tied to character height prevents narrow strokes such
+    as "1" and "7" from being cropped too tightly.
+    """
+    anchor = row[index]
+    centers = [comp.cx for comp in row]
+
+    if len(row) == 1:
+        pitch = max(anchor.width * (1.0 + 2.0 * cfg.padding_ratio), anchor.height * cfg.slot_min_width_to_height)
+        left = anchor.cx - pitch / 2.0
+        right = anchor.cx + pitch / 2.0
+    else:
+        if index == 0:
+            pitch = centers[1] - centers[0]
+            left = anchor.cx - pitch / 2.0
+        else:
+            left = (centers[index - 1] + centers[index]) / 2.0
+
+        if index == len(row) - 1:
+            pitch = centers[-1] - centers[-2]
+            right = anchor.cx + pitch / 2.0
+        else:
+            right = (centers[index] + centers[index + 1]) / 2.0
+
+    min_width = max(
+        anchor.width * (1.0 + 2.0 * cfg.padding_ratio),
+        anchor.height * cfg.slot_min_width_to_height,
+    )
+    if (right - left) < min_width:
+        center = (left + right) / 2.0
+        left = center - min_width / 2.0
+        right = center + min_width / 2.0
+
+    # Always include the anchor itself plus a tiny safety margin.
+    left = min(left, anchor.x - 1)
+    right = max(right, anchor.x + anchor.width + 1)
+
+    x0 = max(0, int(np.floor(left)))
+    x1 = min(image_width, int(np.ceil(right)))
+    if x1 <= x0:
+        x1 = min(image_width, x0 + 1)
+    return x0, x1
+
+
+def _related_slot_glyph(
+    slot: np.ndarray,
+    anchor: ComponentStats,
+    slot_origin: tuple[int, int],
+    cfg: SegmentationConfig,
+) -> np.ndarray:
+    """
+    Keep the anchor and detached fragments that plausibly belong to it.
+
+    The separator dot in a plate should not become part of a neighbouring
+    glyph, but a detached top bar of "7" should.  Horizontal overlap with
+    the anchor is the strongest cue: real detached strokes usually sit
+    above or below the main glyph body, while separators live between
+    neighbouring character slots.
+    """
+    cc = connected_components(slot, connectivity=cfg.connectivity)
+    if cc.num_labels == 0:
+        return np.zeros_like(slot, dtype=np.uint8)
+
+    origin_x, origin_y = slot_origin
+    anchor_x0 = anchor.x - origin_x
+    anchor_x1 = anchor_x0 + anchor.width
+    anchor_y0 = anchor.y - origin_y
+    anchor_y1 = anchor_y0 + anchor.height
+    anchor_area = max(1, anchor.area)
+
+    kept = np.zeros_like(slot, dtype=np.uint8)
+    for comp in cc.stats:
+        if comp.area < max(2, int(round(anchor_area * cfg.related_fragment_min_area_ratio))):
+            continue
+
+        overlap_x = _range_overlap(comp.x, comp.x + comp.width, anchor_x0, anchor_x1)
+        overlap_y = _range_overlap(comp.y, comp.y + comp.height, anchor_y0, anchor_y1)
+        x_overlap_ratio = overlap_x / max(1, min(comp.width, anchor.width))
+        y_overlap_ratio = overlap_y / max(1, min(comp.height, anchor.height))
+        tall_body = comp.height >= 0.45 * anchor.height and overlap_y > 0
+        related_by_x = x_overlap_ratio >= cfg.related_fragment_min_x_overlap_ratio
+        related_by_y = y_overlap_ratio >= 0.45 and overlap_x > 0
+
+        touches_slot_edge = (
+            comp.x <= 0
+            or comp.y <= 0
+            or comp.x + comp.width >= slot.shape[1]
+            or comp.y + comp.height >= slot.shape[0]
+        )
+        thin_border_fragment = touches_slot_edge and comp.height <= 0.18 * anchor.height
+
+        if thin_border_fragment:
+            continue
+        if tall_body or related_by_x or related_by_y:
+            kept[cc.labels == comp.label] = 255
+
+    return kept
+
+
+def _range_overlap(a0: float, a1: float, b0: float, b1: float) -> float:
+    """Return the overlap length of two half-open one-dimensional ranges."""
+    return max(0.0, min(a1, b1) - max(a0, b0))
 
 
 def normalize_character(
@@ -327,7 +645,7 @@ def _assign_rows_and_sort(
     """
     Sort characters left-to-right, with optional two-line grouping.
 
-    Vietnamese plates can be single-line or two-line.  We detect two
+    Some plates are single-line and others are two-line.  We detect two
     rows by looking for a large vertical gap between character centres.
     """
     if not characters:

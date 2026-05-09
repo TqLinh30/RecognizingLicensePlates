@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-09
+
+### Fixed
+
+- Step 4 character segmentation now uses Otsu connected-component anchors plus
+  local adaptive slot crops, so detached strokes such as the top bar of `7`
+  are kept before OCR instead of being cropped into narrow vertical fragments.
+- GUI Step 4.1 now shows the actual adaptive character mask used for glyph
+  crops.
+
 ## [0.8.0] - 2026-05-09
 
 ### Added
