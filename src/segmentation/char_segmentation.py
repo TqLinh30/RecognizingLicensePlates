@@ -182,8 +182,9 @@ def segment_characters(
     # therefore use tall components as anchors, then crop a character
     # slot around each anchor and keep related fragments inside it.
     raw_chars = _build_slot_candidates(binary, anchors, image_shape=(H, W), cfg=cfg)
+    pruned_chars = _prune_edge_artifact_characters(raw_chars, image_shape=(H, W), cfg=cfg)
 
-    ordered = _assign_rows_and_sort(raw_chars, plate_height=H, cfg=cfg)
+    ordered = _assign_rows_and_sort(pruned_chars, plate_height=H, cfg=cfg)
 
     return SegmentationResult(
         binary=binary,
@@ -409,6 +410,123 @@ def _build_slot_candidates(
             )
 
     return characters
+
+
+def _prune_edge_artifact_characters(
+    characters: list[CharacterCandidate],
+    image_shape: tuple[int, int],
+    cfg: SegmentationConfig,
+) -> list[CharacterCandidate]:
+    """
+    Remove frame/logo fragments that masquerade as edge characters.
+
+    Real-world plate crops often include coloured borders, screws, or a
+    small state/logo mark at the left or right edge.  Those pieces can be
+    tall enough to pass the connected-component filters and then become
+    fake ``I``/``1`` characters.  This pass is intentionally conservative:
+    it only trims row-edge candidates whose foreground is much smaller or
+    whose anchor is much shorter than the row's dominant glyphs.  Interior
+    narrow glyphs such as ``1`` are left alone.
+    """
+    if len(characters) < 3:
+        return characters
+
+    H, W = image_shape
+    pruned: list[CharacterCandidate] = []
+    for row in _group_character_rows(characters, plate_height=H, cfg=cfg):
+        row_sorted = sorted(row, key=lambda c: c.center_x)
+        row_pruned = _trim_row_edge_artifacts(row_sorted, image_width=W)
+        pruned.extend(row_pruned)
+    return pruned
+
+
+def _group_character_rows(
+    characters: list[CharacterCandidate],
+    plate_height: int,
+    cfg: SegmentationConfig,
+) -> list[list[CharacterCandidate]]:
+    """Group already-built character slots into text rows."""
+    if len(characters) <= 1:
+        return [characters]
+
+    by_y = sorted(characters, key=lambda char: char.center_y)
+    centers = np.array([char.center_y for char in by_y], dtype=np.float32)
+    gaps = np.diff(centers)
+    if gaps.size == 0:
+        return [by_y]
+
+    largest_gap_idx = int(np.argmax(gaps))
+    largest_gap = float(gaps[largest_gap_idx])
+    if largest_gap >= cfg.two_line_gap_ratio * plate_height:
+        split = largest_gap_idx + 1
+        return [by_y[:split], by_y[split:]]
+    return [by_y]
+
+
+def _trim_row_edge_artifacts(
+    row: list[CharacterCandidate],
+    image_width: int,
+) -> list[CharacterCandidate]:
+    """Trim suspicious first/last slots from one text row."""
+    if len(row) < 3:
+        return row
+
+    metrics = [_normalized_foreground_metrics(char.normalized) for char in row]
+    fg_widths = np.array([m[0] for m in metrics], dtype=np.float32)
+    fg_areas = np.array([m[1] for m in metrics], dtype=np.float32)
+    comp_heights = np.array([char.component.height for char in row], dtype=np.float32)
+    median_width = float(np.median(fg_widths))
+    median_area = float(np.median(fg_areas))
+    median_height = float(np.median(comp_heights))
+    if median_width <= 0 or median_area <= 0 or median_height <= 0:
+        return row
+
+    keep = [True] * len(row)
+    edge_margin = max(2, int(round(0.08 * image_width)))
+
+    def is_artifact(idx: int, current_left: int, current_right: int) -> bool:
+        char = row[idx]
+        fg_width, fg_area = metrics[idx]
+        comp_short = char.component.height < 0.78 * median_height
+        low_area = fg_area < 0.46 * median_area
+        skinny_low_mass = fg_width <= 0.62 * median_width and fg_area < 0.70 * median_area
+        touches_outer_crop = char.x <= edge_margin or char.x + char.width >= image_width - edge_margin
+        near_row_edge = idx <= current_left + 1 or idx >= current_right - 1
+        current_outer_edge = idx == current_left or idx == current_right
+        hard_outer_frame = touches_outer_crop and len(row) > 8 and current_outer_edge
+        short_decorative_edge = comp_short and current_outer_edge
+        outer_skinny_frame = touches_outer_crop and near_row_edge and (low_area or skinny_low_mass)
+        return (
+            hard_outer_frame
+            or short_decorative_edge
+            or outer_skinny_frame
+            or near_row_edge
+            and (touches_outer_crop or len(row) > 8)
+            and (comp_short or low_area or skinny_low_mass)
+        )
+
+    left = 0
+    right = len(row) - 1
+    while left < right - 1 and is_artifact(left, left, right):
+        keep[left] = False
+        left += 1
+
+    while right > left + 1 and is_artifact(right, left, right):
+        keep[right] = False
+        right -= 1
+
+    return [char for char, keep_char in zip(row, keep) if keep_char]
+
+
+def _normalized_foreground_metrics(char_image: np.ndarray) -> tuple[int, int]:
+    """Return tight foreground width and foreground area for a 32x32 glyph."""
+    fg = char_image > 0
+    if not np.any(fg):
+        return (0, 0)
+    _ys, xs = np.nonzero(fg)
+    width = int(xs.max() - xs.min() + 1)
+    area = int(fg.sum())
+    return (width, area)
 
 
 def _group_anchor_rows(
