@@ -14,7 +14,9 @@ from typing import Sequence
 import numpy as np
 
 from src.detection import PlateCandidate
+from src.detection.connected_components import connected_components
 from src.normalization import NormalizationResult, normalize_plate
+from src.preprocessing.thresholding import otsu_threshold
 from src.segmentation import SegmentationConfig, SegmentationResult, segment_characters
 
 
@@ -82,6 +84,9 @@ def select_plate_region(
             )
         )
 
+    if not any(_has_usable_character_count(option) for option in options):
+        options.extend(_bright_region_options(enhanced_gray, cfg))
+
     if not options:
         return None
     return max(options, key=_plate_region_score)
@@ -132,5 +137,75 @@ def _plate_region_score(option: PlateRegionOption) -> tuple[float, float, float]
         count_score = min(0.30, 0.05 * count)
 
     border_penalty = 0.60 if option.touches_image_border else 0.0
-    total = count_score + option.detection_score - border_penalty
+    full_image_bonus = 0.04 if option.source == "full-image fallback" and 5 <= count <= 8 else 0.0
+    total = count_score + option.detection_score + full_image_bonus - border_penalty
     return (total, count_score, option.detection_score)
+
+
+def _has_usable_character_count(option: PlateRegionOption) -> bool:
+    """Return whether a candidate already segments into a plausible text row."""
+    count = len(option.segmentation.characters)
+    return 4 <= count <= 10
+
+
+def _bright_region_options(
+    enhanced_gray: np.ndarray,
+    cfg: SegmentationConfig,
+) -> list[PlateRegionOption]:
+    """
+    Find bright plate-like rectangles as a detector fallback.
+
+    Sobel-X detection works well for high-contrast Vietnamese-style
+    plates, but it can miss a small bright plate in a large dark vehicle
+    image when the surrounding bodywork dominates the gradient map.  This
+    fallback thresholds bright connected components, keeps rectangular
+    regions with plate-like aspect ratios, and still validates them by
+    downstream character segmentation before they can be selected.
+    """
+    H, W = enhanced_gray.shape
+    bright, _threshold = otsu_threshold(enhanced_gray, invert=False)
+    cc = connected_components(bright, connectivity=8)
+    options: list[PlateRegionOption] = []
+    for comp in cc.stats:
+        aspect = comp.width / max(1, comp.height)
+        box_area_ratio = (comp.width * comp.height) / max(1, H * W)
+        if not (1.5 <= aspect <= 6.5):
+            continue
+        if not (0.001 <= box_area_ratio <= 0.10):
+            continue
+        if comp.width < 80 or comp.height < 30:
+            continue
+        if comp.fill_ratio < 0.20:
+            continue
+
+        candidate = PlateCandidate(
+            x=comp.x,
+            y=comp.y,
+            width=comp.width,
+            height=comp.height,
+            score=float(comp.fill_ratio) * 0.35,
+            aspect_ratio=aspect,
+            fill_ratio=comp.fill_ratio,
+            gradient_density=0.0,
+            component=comp,
+        )
+        norm = normalize_plate(enhanced_gray, candidate)
+        seg = segment_characters(norm.normalized, cfg)
+        if not seg.characters:
+            continue
+        options.append(
+            PlateRegionOption(
+                source=f"bright-region fallback #{len(options) + 1}",
+                box=norm.box,
+                normalized=norm.normalized,
+                segmentation=seg,
+                angle_degrees=norm.angle_degrees,
+                cropped=norm.cropped,
+                edge_image=norm.edge_image,
+                deskewed=norm.deskewed,
+                detection_score=float(candidate.score),
+                touches_image_border=False,
+            )
+        )
+
+    return options[:8]

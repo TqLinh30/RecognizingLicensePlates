@@ -28,18 +28,34 @@ from src.segmentation import normalize_character
 
 DEFAULT_SYNTHETIC_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 DEFAULT_FONT_NAMES = [
+    "AGENCYB.TTF",
+    "AGENCYR.TTF",
     "arial.ttf",
     "arialbd.ttf",
+    "ariblk.ttf",
     "ARIALN.TTF",
     "ARIALNB.TTF",
+    "ARIALNBI.TTF",
+    "ARIALNI.TTF",
     "bahnschrift.ttf",
+    "BRLNSB.TTF",
+    "BRLNSDB.TTF",
+    "BRLNSR.TTF",
     "calibri.ttf",
     "calibrib.ttf",
+    "calibrii.ttf",
+    "calibril.ttf",
+    "CascadiaMono.ttf",
     "consola.ttf",
     "consolab.ttf",
+    "cour.ttf",
+    "courbd.ttf",
     "impact.ttf",
+    "lucon.ttf",
     "tahoma.ttf",
     "tahomabd.ttf",
+    "trebuc.ttf",
+    "trebucbd.ttf",
     "verdana.ttf",
     "verdanab.ttf",
 ]
@@ -144,17 +160,35 @@ def _render_augmented_char(
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
 
-    x = (canvas_size - text_w) / 2.0 - bbox[0] + float(rng.normal(0, 2.2))
-    y = (canvas_size - text_h) / 2.0 - bbox[1] + float(rng.normal(0, 2.2))
-    stroke = int(rng.choice([0, 0, 1]))
+    x = (canvas_size - text_w) / 2.0 - bbox[0] + float(rng.normal(0, 2.8))
+    y = (canvas_size - text_h) / 2.0 - bbox[1] + float(rng.normal(0, 2.8))
+    stroke = int(rng.choice([0, 0, 0, 1, 1, 2]))
     draw.text((x, y), ch, fill=255, font=font, stroke_width=stroke, stroke_fill=255)
+
+    # License-plate fonts vary wildly: some are DIN-like and condensed,
+    # others are wide, heavy, or camera-stretched after perspective
+    # correction.  Scaling the rendered glyph before the affine jitter
+    # gives the OCR model a much broader shape prior without relying on
+    # any country-specific plate format.
+    scale_x = float(rng.uniform(0.72, 1.28))
+    scale_y = float(rng.uniform(0.82, 1.16))
+    scaled_size = (
+        max(1, int(round(canvas_size * scale_x))),
+        max(1, int(round(canvas_size * scale_y))),
+    )
+    scaled = image.resize(scaled_size, resample=Image.Resampling.BILINEAR)
+    recentered = Image.new("L", (canvas_size, canvas_size), 0)
+    left = (canvas_size - scaled_size[0]) // 2
+    top = (canvas_size - scaled_size[1]) // 2
+    recentered.paste(scaled, (left, top))
+    image = recentered
 
     # Small geometric perturbations: rotate and shear, both common after
     # plate detection/deskewing and imperfect character segmentation.
-    angle = float(rng.uniform(-8.0, 8.0))
+    angle = float(rng.uniform(-10.0, 10.0))
     image = image.rotate(angle, resample=Image.Resampling.BILINEAR, fillcolor=0)
 
-    shear_x = float(rng.uniform(-0.12, 0.12))
+    shear_x = float(rng.uniform(-0.16, 0.16))
     shift_x = -shear_x * canvas_size / 2.0
     image = image.transform(
         image.size,
@@ -164,8 +198,8 @@ def _render_augmented_char(
         fillcolor=0,
     )
 
-    if rng.random() < 0.35:
-        image = image.filter(ImageFilter.GaussianBlur(radius=float(rng.uniform(0.2, 0.8))))
+    if rng.random() < 0.45:
+        image = image.filter(ImageFilter.GaussianBlur(radius=float(rng.uniform(0.15, 1.0))))
 
     arr = np.asarray(image, dtype=np.uint8)
 
@@ -173,7 +207,7 @@ def _render_augmented_char(
     # simulate stroke thickening/thinning after binarization.
     threshold = int(rng.integers(70, 150))
     binary = ((arr > threshold).astype(np.uint8)) * 255
-    morph = rng.choice(["none", "none", "dilate", "erode"])
+    morph = rng.choice(["none", "none", "none", "dilate", "dilate", "erode"])
     if morph == "dilate":
         binary = dilate(binary, rect(2, 2))
     elif morph == "erode":
