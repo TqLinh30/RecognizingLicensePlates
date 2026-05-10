@@ -36,8 +36,6 @@ htmlcov/
 # Project-specific
 data/output/*
 !data/output/.gitkeep
-data/samples/*
-!data/samples/.gitkeep
 data/raw/
 data/cache/
 *.npy

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Bundled local sample images are now tracked so the sample benchmark can run
+  after a fresh clone.
+- Expanded README with project scope, pipeline details, VS Code setup,
+  verification commands, known limitations, lessons learned, and objective
+  self-evaluation.
+
+### Changed
+
+- Cleaned dependency-file comments to avoid mojibake in fresh checkouts.
+- Synced the bundled model artifacts and sample assets for the final project
+  snapshot.
+- Documented the release-zip packaging policy and excluded local raw/debug
+  artifacts from the deliverable archive.
+
 ## [0.14.0] - 2026-05-10
 
 ### Added

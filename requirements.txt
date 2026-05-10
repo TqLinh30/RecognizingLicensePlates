@@ -1,9 +1,9 @@
-# Minimal dependencies — every CV / ML algorithm is implemented from scratch.
+# Minimal dependencies: every CV / ML algorithm is implemented from scratch.
 numpy>=1.23.0       # Numeric arrays and vectorized operations
-Pillow>=9.0.0       # File I/O only (read/write image files to/from arrays)
+Pillow>=9.0.0       # File I/O only
 
-# Optional — for debugging visualization (not used by core pipeline)
-matplotlib>=3.5.0   # Used only by visualization helpers in src/utils
+# Optional: debugging visualization helpers
+matplotlib>=3.5.0
 
 # Testing
 pytest>=7.0.0
