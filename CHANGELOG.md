@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-05-10
+
+### Changed
+
+- Rewrote the README in English and kept the content ASCII-clean for reliable
+  rendering across terminals and GitHub.
+
 ## [0.15.0] - 2026-05-10
 
 ### Added
