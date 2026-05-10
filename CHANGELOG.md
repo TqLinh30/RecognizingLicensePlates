@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-05-10
+
+### Added
+
+- Bright-region plate fallback for large dark-vehicle images where Sobel-X
+  misses a small bright plate.
+- Shape/context OCR refinement for visually ambiguous raw glyph pairs:
+  `F/5`, `1/7`, `I/1`, and `0/O/Q`, without Vietnam-format rules.
+
+### Changed
+
+- Sample OCR benchmark now covers nineteen labeled local samples, including
+  `plate10.jpg` through `plate17.jpg`.
+- Synthetic printed-character generation now uses a broader Windows font set,
+  horizontal/vertical glyph scaling, heavier strokes, and stronger geometric
+  jitter.
+- GUI OCR blending now favors the general synthetic MLP and uses the real
+  sample-template model only as a high-confidence sample memory.
+- Refreshed `plate_synthetic_mlp.npz`, `plate_pixel_templates.npz`,
+  `plate_zoning_templates.npz`, and `plate_sample_templates.npz`.
+
+### Fixed
+
+- Character segmentation now prunes edge frame/logo fragments that previously
+  appeared as fake `I`/`1` glyphs on bordered plates.
+
 ## [0.12.0] - 2026-05-10
 
 ### Changed

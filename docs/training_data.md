@@ -90,7 +90,9 @@ check.
 
 This is still character-level OCR, not plate-format correction: the model learns
 individual glyph templates from real sample images and the GUI blends them with
-the broader synthetic models.
+the broader synthetic models.  The GUI treats this model as high-confidence
+sample memory only; the synthetic MLP remains the general model for unseen
+plates.
 
 Evaluate the bundled sample images:
 
