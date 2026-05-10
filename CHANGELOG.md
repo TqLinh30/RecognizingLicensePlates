@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-05-10
+
+### Added
+
+- Sample OCR labels now include the newly added local samples:
+  `plate18.jpg`, `plate20.jpg`, `plate21.jpg`, `plate22.jpg`, and
+  `plate23.jpg`.
+
+### Changed
+
+- Refreshed the sample-template OCR memory from 169 segmented glyph crops.
+
+### Fixed
+
+- Character segmentation now uses projection-based recovery when glyph slots
+  are merged, improving connected text such as `EAA0003`.
+- Edge-artifact pruning now trims decorative badges, city text, and frame
+  fragments while preserving real leading characters.
+
 ## [0.13.0] - 2026-05-10
 
 ### Added
