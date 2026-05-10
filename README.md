@@ -1,93 +1,145 @@
 # RecognizingLicensePlates
 
-Hệ thống nhận dạng biển số xe được xây dựng từ đầu bằng Python. Dự án chủ
-đích không dùng OpenCV, scikit-image hay framework computer vision cấp cao.
-Toàn bộ thuật toán xử lý ảnh, phân đoạn ký tự, trích xuất đặc trưng và nhận
-dạng ký tự được cài đặt thủ công bằng NumPy; Pillow chỉ dùng để đọc/ghi ảnh.
+A from-scratch license plate recognition project written in Python.
 
-Mục tiêu chính của dự án là học và kiểm soát rõ từng bước trong pipeline ALPR
-(Automatic License Plate Recognition), thay vì gọi sẵn một thư viện lớn.
+This project intentionally avoids high-level computer vision libraries such as
+OpenCV and scikit-image. The image-processing, segmentation, feature
+extraction, and classification algorithms are implemented manually with NumPy.
+Pillow is used only for reading and writing image files.
 
-## Trạng thái hiện tại
+The main goal is educational: to expose how a classical ALPR (Automatic
+License Plate Recognition) pipeline works internally, step by step, instead of
+delegating the core logic to a large external library.
 
-- Pipeline hoàn chỉnh từ ảnh đầu vào đến chuỗi ký tự OCR.
-- Có giao diện desktop để chọn ảnh trực tiếp từ máy tính.
-- Có chế độ hiển thị kết quả trung gian của từng bước nhận dạng.
-- Có model OCR đi kèm trong `data/models`.
-- Có bộ ảnh mẫu trong `data/samples` và file nhãn trong
-  `data/labels/sample_ocr_labels.json`.
-- Benchmark local hiện tại: `24/24` ảnh mẫu pass bằng
+## Current Status
+
+- Complete end-to-end OCR pipeline from input image to recognized characters.
+- Desktop GUI for selecting an image directly from the local computer.
+- Step-by-step visualization of the recognition process.
+- Bundled OCR models under `data/models`.
+- Bundled sample images under `data/samples`.
+- Sample labels under `data/labels/sample_ocr_labels.json`.
+- Current local sample benchmark: `24/24` samples pass with
   `python -m scripts.evaluate_samples`.
-- Unit tests hiện tại: `95 passed` bằng `python -m pytest -q`.
+- Current unit test suite: `95 passed` with `python -m pytest -q`.
 
-## Các bước xử lý đã xây dựng
+## What This Project Does
 
-Pipeline tổng quát:
+The project implements the following ALPR pipeline:
 
 ```text
 Input image
   -> Step 1: Preprocessing
-  -> Step 2: Plate detection
+  -> Step 2: License plate detection
   -> Step 3: Plate cropping and normalization
   -> Step 4: Character segmentation
   -> Step 5: Feature extraction
   -> Step 6: Character classification
-  -> Step 7: OCR result
+  -> Step 7: OCR output
 ```
 
-Chi tiết:
+### Step 1: Preprocessing
 
-1. Preprocessing
-   - Chuyển RGB sang grayscale theo công thức luminance.
-   - Gaussian blur tự cài đặt bằng convolution tách 1D.
-   - Median filter.
-   - Histogram equalization.
-   - CLAHE tự cài đặt để tăng tương phản cục bộ.
-   - Otsu thresholding tự cài đặt.
+Implemented algorithms:
 
-2. Plate detection
-   - Sobel-X/Sobel-Y tự cài đặt.
-   - Morphology: dilation, erosion, opening, closing.
-   - Connected components bằng thuật toán two-pass và Union-Find.
-   - Lọc candidate theo tỉ lệ khung, diện tích, fill ratio và mật độ gradient.
-   - Có fallback cho ảnh xe lớn có biển sáng nhưng detector cạnh bỏ sót.
+- RGB to grayscale conversion using luminance weights.
+- Gaussian blur implemented with separable 1D convolution.
+- Median filtering.
+- Histogram calculation and histogram equalization.
+- CLAHE (Contrast Limited Adaptive Histogram Equalization).
+- Fixed thresholding and Otsu thresholding.
 
-3. Plate normalization
-   - Crop vùng biển số.
-   - Ước lượng góc nghiêng bằng Hough transform.
-   - Xoay ảnh bằng affine transform và bilinear interpolation.
-   - Resize biển số về kích thước chuẩn cho bước segment.
+Purpose:
 
-4. Character segmentation
-   - Threshold ảnh biển số.
-   - Làm sạch bằng morphology.
-   - Tìm connected components của ký tự.
-   - Gom ký tự theo hàng.
-   - Chuẩn hóa mỗi ký tự về canvas nhị phân `32x32`.
-   - Có projection recovery để tách ký tự bị dính.
-   - Có edge-artifact pruning để bỏ logo, viền, city text, badge hoặc mảnh
-     trang trí ở rìa mà không cắt nhầm ký tự thật.
+- Reduce noise.
+- Improve contrast.
+- Normalize the image before detection and segmentation.
 
-5. Feature extraction
-   - HOG tự cài đặt: gradient, magnitude, orientation bins, block normalize.
-   - Zoning feature: chia ảnh ký tự thành lưới và đo mật độ pixel.
-   - Kết hợp feature vector phục vụ classifier.
+### Step 2: License Plate Detection
 
-6. Character classification
-   - KNN baseline.
-   - MLP tự cài đặt bằng NumPy: forward, ReLU, softmax, backprop.
-   - Pixel-template classifier.
-   - Zoning-template classifier.
-   - Sample-template memory từ các ảnh mẫu thật trong project.
-   - GUI hiện blend nhiều model và ưu tiên kết quả ký tự, không ép theo format
-     biển số Việt Nam.
+Implemented algorithms:
 
-7. Output
-   - Trả về chuỗi OCR ký tự.
-   - Hiển thị confidence trung bình và top candidates trong GUI.
-   - Không còn ép kết quả theo format quốc gia cụ thể.
+- Sobel-X and Sobel-Y edge detection.
+- Binary morphology: dilation, erosion, opening, and closing.
+- Connected component labeling using a two-pass algorithm and Union-Find.
+- Candidate scoring based on aspect ratio, area, fill ratio, and gradient
+  density.
+- Bright-region fallback for large images where a small bright plate may be
+  missed by the edge detector.
 
-## Cấu trúc thư mục
+Purpose:
+
+- Locate the most likely rectangular plate region in a full vehicle image.
+
+### Step 3: Plate Cropping and Normalization
+
+Implemented algorithms:
+
+- Plate crop extraction.
+- Skew estimation using Hough transform.
+- Affine rotation.
+- Bilinear interpolation.
+- Plate resize to a standard processing size.
+
+Purpose:
+
+- Convert a detected plate into a normalized image suitable for character
+  segmentation.
+
+### Step 4: Character Segmentation
+
+Implemented algorithms and heuristics:
+
+- Plate thresholding.
+- Morphological cleanup.
+- Connected component analysis for glyph candidates.
+- Row grouping for one-line and two-line plates.
+- Character normalization to a `32x32` binary canvas.
+- Projection-based recovery when several glyphs are merged into one wide slot.
+- Edge-artifact pruning for frames, badges, city text, logos, and decorative
+  fragments near the plate boundary.
+
+Purpose:
+
+- Extract one normalized binary image per character.
+
+### Step 5: Feature Extraction
+
+Implemented feature descriptors:
+
+- HOG (Histogram of Oriented Gradients), including gradient computation,
+  orientation bins, cell histograms, and block normalization.
+- Zoning features based on foreground density in a grid.
+
+Purpose:
+
+- Convert each normalized character image into a numeric feature vector.
+
+### Step 6: Character Classification
+
+Implemented classifiers:
+
+- KNN baseline.
+- MLP implemented with NumPy: forward pass, ReLU, softmax, backpropagation,
+  and gradient descent.
+- Pixel-template classifier.
+- Zoning-template classifier.
+- Sample-template memory generated from real local sample plates.
+
+The GUI blends multiple OCR models and reports raw character OCR results. It no
+longer forces the output into a Vietnam-specific plate format; the current goal
+is to recognize individual characters accurately.
+
+### Step 7: OCR Output
+
+Output includes:
+
+- Recognized character string.
+- Average confidence.
+- Top candidates per character in the GUI.
+- Intermediate visual stages for debugging and evaluation.
+
+## Project Structure
 
 ```text
 RecognizingLicensePlates/
@@ -122,239 +174,297 @@ RecognizingLicensePlates/
 `-- README.md
 ```
 
-## Cài đặt
+## Installation
 
-Yêu cầu:
+Requirements:
 
-- Python 3.10 trở lên.
-- Windows, Linux hoặc macOS.
+- Python 3.10 or newer.
+- Windows, Linux, or macOS.
 
-Clone project:
+Clone the repository:
 
 ```bash
 git clone https://github.com/TqLinh30/RecognizingLicensePlates.git
 cd RecognizingLicensePlates
 ```
 
-Tạo môi trường ảo:
+Create a virtual environment:
 
 ```bash
 python -m venv venv
 ```
 
-Kích hoạt môi trường ảo trên Windows PowerShell:
+Activate the virtual environment on Windows PowerShell:
 
 ```powershell
 .\venv\Scripts\Activate.ps1
 ```
 
-Nếu PowerShell chặn script, chạy:
+If PowerShell blocks script execution, run:
 
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-Cài dependency:
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Chạy bằng Visual Studio Code
+On Linux or macOS:
 
-1. Mở VS Code.
-2. Chọn `File -> Open Folder...`.
-3. Mở thư mục `RecognizingLicensePlates`.
-4. Mở terminal trong VS Code bằng `Terminal -> New Terminal`.
-5. Tạo và kích hoạt virtual environment như phần cài đặt.
-6. Chạy GUI:
+```bash
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Running the Project in Visual Studio Code
+
+1. Open Visual Studio Code.
+2. Select `File -> Open Folder...`.
+3. Open the `RecognizingLicensePlates` folder.
+4. Open a terminal with `Terminal -> New Terminal`.
+5. Create and activate the virtual environment.
+6. Install dependencies with `pip install -r requirements.txt`.
+7. Run the GUI:
 
 ```bash
 python gui.py
 ```
 
-Hoặc:
+Alternative command:
 
 ```bash
 python -m src.gui.app
 ```
 
-## Sử dụng GUI
+## Using the GUI
 
-GUI cho phép:
+The GUI lets you:
 
-- Chọn ảnh từ máy tính bằng file picker.
-- Chạy toàn bộ pipeline nhận dạng.
-- Xem từng bước trung gian:
-  - ảnh grayscale,
-  - ảnh sau blur/CLAHE,
-  - candidate biển số,
-  - biển số sau crop/normalize,
-  - ảnh binary trước segment,
+- Select an image from your computer.
+- Run the full recognition pipeline.
+- Inspect intermediate stages:
+  - grayscale image,
+  - blurred and contrast-enhanced image,
+  - plate candidates,
+  - cropped and normalized plate,
+  - binary character cleanup,
   - character boxes,
   - normalized character crops,
   - feature summary,
-  - kết quả OCR.
+  - OCR result.
 
-Ảnh đầu vào có thể là:
+The input can be:
 
-- ảnh xe đầy đủ có biển số,
-- ảnh biển số đã crop,
-- ảnh synthetic dùng để debug.
+- a full vehicle image,
+- an already-cropped plate image,
+- a synthetic/debug image.
 
-## Benchmark và kiểm thử
+## Benchmark and Tests
 
-Chạy benchmark trên bộ ảnh mẫu:
+Run the sample benchmark:
 
 ```bash
 python -m scripts.evaluate_samples
 ```
 
-Kết quả kỳ vọng hiện tại:
+Expected current result:
 
 ```text
 24/24 samples pass
 ```
 
-Chạy unit tests:
+Run unit tests:
 
 ```bash
 python -m pytest -q
 ```
 
-Kết quả kỳ vọng hiện tại:
+Expected current result:
 
 ```text
 95 passed
 ```
 
-Kiểm tra cú pháp Python:
+Check Python syntax:
 
 ```bash
 python -m compileall -q src scripts tests gui.py
 ```
 
-## Dữ liệu và model
+## Data and Models
 
-Project đi kèm:
+Bundled project data:
 
-- `data/samples`: ảnh mẫu dùng để demo và benchmark.
-- `data/labels/sample_ocr_labels.json`: ground truth cho ảnh mẫu.
-- `data/models/plate_synthetic_mlp.npz`: MLP train bằng synthetic character data.
+- `data/samples`: sample images used for demo and benchmark.
+- `data/labels/sample_ocr_labels.json`: ground-truth labels for samples.
+- `data/models/plate_synthetic_mlp.npz`: MLP trained on synthetic character
+  data.
 - `data/models/plate_pixel_templates.npz`: pixel-template OCR model.
 - `data/models/plate_zoning_templates.npz`: zoning-template OCR model.
-- `data/models/plate_sample_templates.npz`: template memory tạo từ ảnh mẫu thật.
-- `data/models/emnist_mlp.npz`: model thử nghiệm từ EMNIST.
+- `data/models/plate_sample_templates.npz`: sample-template memory generated
+  from real sample plates.
+- `data/models/emnist_mlp.npz`: experimental EMNIST-based model.
 
-Train lại sample-template model:
+Retrain the sample-template model:
 
 ```bash
 python -m scripts.train_sample_templates
 ```
 
-Train lại synthetic MLP:
+Retrain the synthetic MLP:
 
 ```bash
 python -m scripts.train_synthetic_mlp
 ```
 
-Train lại template models:
+Retrain template models:
 
 ```bash
 python -m scripts.train_pixel_template
 python -m scripts.train_zoning_template
 ```
 
-## Những khó khăn đã gặp và cách xử lý
+## Main Difficulties and How They Were Solved
 
-1. Ánh sáng không đều
-   - Vấn đề: ảnh xe thật có bóng đổ, phản sáng, vùng biển tối/sáng khác nhau.
-   - Cách xử lý: thêm CLAHE để tăng tương phản cục bộ trước khi detect và
-     threshold.
+### Uneven lighting
 
-2. Detector chọn nhầm vùng chữ trên thân xe
-   - Vấn đề: các chữ như `TURBO` hoặc chi tiết lưới tản nhiệt cũng có nhiều
-     cạnh dọc.
-   - Cách xử lý: candidate scoring kết hợp aspect ratio, fill ratio, area và
-     gradient density, không chỉ dựa vào cạnh.
+Problem:
 
-3. Ảnh xe lớn nhưng biển số nhỏ
-   - Vấn đề: Sobel/morphology có thể bỏ sót biển số sáng nhỏ trong ảnh lớn.
-   - Cách xử lý: thêm bright-region fallback và plate selector dựa trên chất
-     lượng segmentation downstream.
+- Real vehicle images often contain shadows, highlights, and uneven plate
+  illumination.
 
-4. Ký tự bị dính hoặc bị tách sai ở bước 4.2
-   - Vấn đề: connected components đôi khi merge nhiều ký tự, hoặc viền/logo bị
-     nhận thành ký tự.
-   - Cách xử lý: thêm projection-based recovery để tách slot rộng, đồng thời
-     thêm edge-artifact pruning để bỏ badge, city text, frame fragments.
+Solution:
 
-5. OCR nhầm giữa các ký tự giống nhau
-   - Vấn đề: `0/O`, `1/I`, `5/S`, `7/1`, `8/B` rất dễ nhầm khi ảnh mờ hoặc crop
-     bị lệch.
-   - Cách xử lý: blend nhiều classifier, thêm template memory từ sample thật,
-     cải thiện synthetic training bằng nhiều font, stroke và jitter.
+- CLAHE was added to improve local contrast before detection and segmentation.
 
-6. Kết quả từng bị ép theo format Việt Nam
-   - Vấn đề: ép format giúp một vài biển Việt Nam đúng hơn nhưng làm sai các
-     ảnh không theo format đó.
-   - Cách xử lý: bỏ Vietnam-format output trong GUI; mục tiêu hiện tại là nhận
-     đúng từng ký tự độc lập.
+### False plate candidates
 
-7. Dữ liệu sample không được push lên Git
-   - Vấn đề: label/test phụ thuộc vào ảnh mẫu nhưng `data/samples` từng bị
-     ignore.
-   - Cách xử lý: đưa bộ sample nhỏ vào repo để benchmark có thể chạy lại sau
-     khi clone.
+Problem:
 
-## Tự đánh giá khách quan
+- Vehicle text, grilles, and decorative details can produce many vertical
+  edges, confusing the detector.
 
-Điểm mạnh:
+Solution:
 
-- Pipeline rõ ràng, dễ học, dễ debug từng bước.
-- Không phụ thuộc OpenCV hoặc thư viện CV cao cấp.
-- Có GUI thực tế để chọn ảnh và quan sát từng stage.
-- Có test cho nhiều module lõi và benchmark ảnh mẫu.
-- Có lịch sử phát triển theo Gitflow, changelog và release tag.
+- Candidate ranking combines aspect ratio, area, fill ratio, and gradient
+  density instead of relying only on edges.
 
-Hạn chế:
+### Small plates in large images
 
-- Đây chưa phải hệ thống production ALPR.
-- Dataset còn nhỏ, benchmark `24/24` chỉ chứng minh project xử lý tốt bộ sample
-  hiện có, không đảm bảo tổng quát trên mọi ảnh ngoài đời.
-- Detector cổ điển vẫn yếu trước ảnh quá nghiêng, motion blur, biển quá nhỏ,
-  biển bẩn, che khuất hoặc ánh sáng cực đoan.
-- OCR dựa nhiều vào template/synthetic data nên có thể nhầm khi font rất khác
-  hoặc crop ký tự sai.
-- Chưa có perspective transform đầy đủ cho biển bị chụp xiên mạnh.
-- Chưa có CI/CD tự động trên GitHub Actions.
+Problem:
 
-Hướng phát triển hợp lý tiếp theo:
+- A small bright plate in a large vehicle image can be missed by a simple
+  Sobel-based detector.
 
-- Thu thập thêm dataset thật và chia train/validation/test rõ ràng.
-- Thêm annotation cho bounding box biển số và character boxes.
-- Train CNN nhỏ bằng NumPy hoặc cho phép optional deep-learning backend.
-- Cải thiện perspective correction.
-- Thêm GitHub Actions chạy tests và sample benchmark.
-- Tách rõ chế độ educational-from-scratch và chế độ production/optional-libs.
+Solution:
 
-## Gitflow và commitflow
+- A bright-region fallback and downstream segmentation validation were added.
 
-Workflow đang dùng:
+### Incorrect character segmentation
+
+Problem:
+
+- Connected components can merge adjacent characters.
+- Plate frames, logos, country badges, and city text can be detected as fake
+  characters.
+
+Solution:
+
+- Projection-based recovery splits overly wide character slots.
+- Edge-artifact pruning removes suspicious boundary fragments while preserving
+  real leading characters.
+
+### Ambiguous OCR characters
+
+Problem:
+
+- Characters such as `0/O`, `1/I`, `5/S`, `7/1`, and `8/B` are visually
+  similar, especially after blur or imperfect cropping.
+
+Solution:
+
+- Multiple classifiers are blended.
+- A sample-template memory model was generated from local real samples.
+- Synthetic training data was improved with multiple fonts, stroke thickness,
+  scaling, and geometric jitter.
+
+### Overly specific plate formatting
+
+Problem:
+
+- Forcing output into a Vietnam-specific format improved some local plates but
+  broke non-Vietnam or non-standard samples.
+
+Solution:
+
+- The GUI now focuses on raw character OCR and does not force the result into a
+  country-specific format.
+
+### Missing sample data in Git
+
+Problem:
+
+- The benchmark depended on local sample images that were not tracked in Git.
+
+Solution:
+
+- The small sample set is now bundled in `data/samples` so a fresh clone can
+  run the benchmark.
+
+## Objective Self-Evaluation
+
+Strengths:
+
+- Clear educational implementation of a full ALPR pipeline.
+- Core computer vision and ML algorithms are implemented from scratch.
+- GUI makes the project usable and easy to debug.
+- Intermediate visual stages make failures easier to inspect.
+- Unit tests and a sample benchmark are included.
+- Gitflow history, changelog, models, and sample assets are included.
+
+Limitations:
+
+- This is not yet a production-grade ALPR system.
+- The benchmark passing `24/24` samples only proves performance on the bundled
+  sample set, not on all real-world plates.
+- The detector can still fail on extreme perspective, severe blur, heavy
+  occlusion, dirty plates, tiny plates, or extreme lighting.
+- OCR still depends heavily on synthetic data and sample templates.
+- Perspective correction for strongly angled plates is limited.
+- There is no GitHub Actions CI pipeline yet.
+
+Recommended next steps:
+
+- Collect a larger labeled dataset.
+- Add plate bounding-box and character-box annotations.
+- Split data into train, validation, and test sets.
+- Add perspective correction for strongly tilted plates.
+- Add GitHub Actions for automated tests and sample benchmark checks.
+- Optionally add a production mode using stronger external ML backends while
+  keeping the from-scratch mode for learning.
+
+## Gitflow and Commitflow
+
+Current workflow:
 
 ```text
 feature/* -> develop -> release/* -> main + tag -> develop
 ```
 
-Tài liệu liên quan:
+Related documentation:
 
 - `docs/gitflow.md`
 - `docs/commitflow.md`
 - `CHANGELOG.md`
 
-## Ghi chú về dung lượng
+## Release Archive Size
 
-Các thư mục sau là artifact local và không nên đưa vào release zip:
+The release zip is built from tracked source files using `git archive`.
+
+Excluded from the archive:
 
 - `venv/`
 - `.git/`
@@ -362,8 +472,7 @@ Các thư mục sau là artifact local và không nên đưa vào release zip:
 - `__pycache__/`
 - `data/raw/`
 - `data/cache/`
-- `data/output/`
+- debug images under `data/output/`
 - `dist/`
 
-Bản zip release được tạo từ source code, docs, tests, model nhỏ và sample ảnh,
-giữ dung lượng dưới 10MB.
+The `v0.15.0` archive was `7.64 MB`, under the requested `10 MB` limit.
