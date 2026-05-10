@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-05-10
+
 ### Added
 
 - Bright-region plate fallback for large dark-vehicle images where Sobel-X
