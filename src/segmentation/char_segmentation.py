@@ -183,6 +183,13 @@ def segment_characters(
     # slot around each anchor and keep related fragments inside it.
     raw_chars = _build_slot_candidates(binary, anchors, image_shape=(H, W), cfg=cfg)
     pruned_chars = _prune_edge_artifact_characters(raw_chars, image_shape=(H, W), cfg=cfg)
+    projection_chars = _projection_recover_candidates(binary, anchors, image_shape=(H, W), cfg=cfg)
+    if _should_use_projection_recovery(pruned_chars, projection_chars):
+        pruned_chars = _prune_edge_artifact_characters(
+            projection_chars,
+            image_shape=(H, W),
+            cfg=cfg,
+        )
 
     ordered = _assign_rows_and_sort(pruned_chars, plate_height=H, cfg=cfg)
 
@@ -412,6 +419,147 @@ def _build_slot_candidates(
     return characters
 
 
+def _projection_recover_candidates(
+    binary: np.ndarray,
+    anchors: list[ComponentStats],
+    image_shape: tuple[int, int],
+    cfg: SegmentationConfig,
+) -> list[CharacterCandidate]:
+    """
+    Recover split slots from vertical projection valleys.
+
+    When decorations or reflective borders connect several glyphs into
+    one large component, the anchor-based slotter may build overly wide
+    crops that contain two characters.  Vertical projection is a useful
+    fallback for this specific failure mode because true printed glyphs
+    still create tall dense column runs while separator dots and screws
+    stay short.
+    """
+    if not anchors:
+        return []
+
+    H, W = image_shape
+    characters: list[CharacterCandidate] = []
+    for row in _group_anchor_rows(anchors, plate_height=H, cfg=cfg):
+        row_sorted = sorted(row, key=lambda comp: comp.cx)
+        heights = np.array([comp.height for comp in row_sorted], dtype=np.float32)
+        median_height = float(np.median(heights)) if heights.size else 1.0
+        y_pad = max(1, int(round(median_height * cfg.slot_vertical_padding_ratio)))
+        row_y0 = max(0, min(comp.y for comp in row_sorted) - y_pad)
+        row_y1 = min(H, max(comp.y + comp.height for comp in row_sorted) + y_pad)
+        row_height = max(1, row_y1 - row_y0)
+
+        foreground = binary[row_y0:row_y1, :] > 0
+        col_counts = foreground.sum(axis=0)
+        threshold = max(3, int(round(0.30 * row_height)))
+        runs = _merge_projection_runs(
+            _column_runs(col_counts > threshold),
+            row_height=row_height,
+        )
+
+        min_width = max(3, int(round(0.12 * row_height)))
+        max_width = max(min_width + 1, int(round(0.85 * row_height)))
+        for x0, x1 in runs:
+            width = x1 - x0
+            if width < min_width or width > max_width:
+                continue
+            glyph = binary[row_y0:row_y1, x0:x1]
+            if not np.any(glyph):
+                continue
+            area = int(np.count_nonzero(glyph))
+            comp = ComponentStats(
+                label=0,
+                x=x0,
+                y=row_y0,
+                width=width,
+                height=row_height,
+                area=area,
+                cx=x0 + (width - 1) / 2.0,
+                cy=row_y0 + (row_height - 1) / 2.0,
+            )
+            normalized = normalize_character(glyph, target_shape=cfg.char_shape)
+            characters.append(
+                CharacterCandidate(
+                    x=x0,
+                    y=row_y0,
+                    width=width,
+                    height=row_height,
+                    image=glyph.copy(),
+                    normalized=normalized,
+                    row_index=0,
+                    component=comp,
+                )
+            )
+
+    return characters
+
+
+def _column_runs(mask: np.ndarray) -> list[tuple[int, int]]:
+    """Return half-open runs of true values in a one-dimensional mask."""
+    runs: list[tuple[int, int]] = []
+    in_run = False
+    start = 0
+    for idx, value in enumerate(mask):
+        if value and not in_run:
+            start = idx
+            in_run = True
+        elif not value and in_run:
+            runs.append((start, idx))
+            in_run = False
+    if in_run:
+        runs.append((start, int(mask.shape[0])))
+    return runs
+
+
+def _merge_projection_runs(
+    runs: list[tuple[int, int]],
+    row_height: int,
+) -> list[tuple[int, int]]:
+    """
+    Merge split stroke pairs that belong to one hollow glyph.
+
+    Characters such as ``0`` can appear as two dense vertical strokes in
+    a projection profile, with a low-count hole between them.  Two real
+    neighbouring characters are much wider when merged, so the combined
+    width guard keeps ordinary inter-character gaps separate.
+    """
+    if len(runs) <= 1:
+        return runs
+
+    max_gap = max(2, int(round(0.20 * row_height)))
+    max_merged_width = max(4, int(round(0.58 * row_height)))
+    merged: list[tuple[int, int]] = [runs[0]]
+    for start, end in runs[1:]:
+        prev_start, prev_end = merged[-1]
+        gap = start - prev_end
+        combined_width = end - prev_start
+        if 0 <= gap <= max_gap and combined_width <= max_merged_width:
+            merged[-1] = (prev_start, end)
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _should_use_projection_recovery(
+    raw_chars: list[CharacterCandidate],
+    projection_chars: list[CharacterCandidate],
+) -> bool:
+    """Decide whether projection recovered a more plausible segmentation."""
+    if not (4 <= len(projection_chars) <= 10):
+        return False
+    if not raw_chars or not projection_chars:
+        return False
+
+    widths = np.array([char.width for char in raw_chars], dtype=np.float32)
+    median_width = float(np.median(widths))
+    if median_width <= 0:
+        return False
+    has_wide_slot = bool(np.any(widths > 1.45 * median_width))
+    if len(projection_chars) > len(raw_chars):
+        return len(raw_chars) < 4 or has_wide_slot
+    return False
+
+
 def _prune_edge_artifact_characters(
     characters: list[CharacterCandidate],
     image_shape: tuple[int, int],
@@ -433,11 +581,34 @@ def _prune_edge_artifact_characters(
 
     H, W = image_shape
     pruned: list[CharacterCandidate] = []
-    for row in _group_character_rows(characters, plate_height=H, cfg=cfg):
+    rows = _drop_decorative_short_rows(
+        _group_character_rows(characters, plate_height=H, cfg=cfg)
+    )
+    for row in rows:
         row_sorted = sorted(row, key=lambda c: c.center_x)
         row_pruned = _trim_row_edge_artifacts(row_sorted, image_width=W)
         pruned.extend(row_pruned)
     return pruned
+
+
+def _drop_decorative_short_rows(
+    rows: list[list[CharacterCandidate]],
+) -> list[list[CharacterCandidate]]:
+    """
+    Drop small decorative rows when a main text row is already present.
+
+    Some plates include city/state text above the OCR text.  If that
+    text survives thresholding as one or two components, it should not be
+    returned as license characters.  True two-line plates, such as a
+    3+5 layout, keep both rows because neither row is tiny.
+    """
+    if len(rows) <= 1:
+        return rows
+    main_lengths = [len(row) for row in rows]
+    if max(main_lengths) < 4:
+        return rows
+    filtered = [row for row in rows if len(row) > 2]
+    return filtered or rows
 
 
 def _group_character_rows(
@@ -494,12 +665,39 @@ def _trim_row_edge_artifacts(
         near_row_edge = idx <= current_left + 1 or idx >= current_right - 1
         current_outer_edge = idx == current_left or idx == current_right
         hard_outer_frame = touches_outer_crop and len(row) > 8 and current_outer_edge
-        short_decorative_edge = comp_short and current_outer_edge
+        short_decorative_edge = (
+            comp_short
+            and current_outer_edge
+            and fg_width >= 11
+            and (touches_outer_crop or len(row) >= 8)
+        )
         outer_skinny_frame = touches_outer_crop and near_row_edge and (low_area or skinny_low_mass)
+        far_isolated_edge = False
+        if touches_outer_crop and current_outer_edge and len(row) >= 4:
+            if idx == current_left and idx + 1 < len(row):
+                gap = row[idx + 1].x - (char.x + char.width)
+            elif idx == current_right and idx - 1 >= 0:
+                gap = char.x - (row[idx - 1].x + row[idx - 1].width)
+            else:
+                gap = 0
+            far_isolated_edge = gap > 1.20 * median_width
+        smaller_than_next = False
+        if len(row) >= 8 and idx == current_left and idx + 1 < len(row):
+            next_width, next_area = metrics[idx + 1]
+            edge_prefix_width = char.width <= 18 or fg_width <= 14
+            smaller_than_next = (
+                edge_prefix_width
+                and fg_width >= 11
+                and char.width < 0.86 * row[idx + 1].width
+                and fg_width < 0.82 * max(1, next_width)
+                and fg_area < 0.75 * max(1, next_area)
+            )
         return (
             hard_outer_frame
             or short_decorative_edge
             or outer_skinny_frame
+            or far_isolated_edge
+            or smaller_than_next
             or near_row_edge
             and (touches_outer_crop or len(row) > 8)
             and (comp_short or low_area or skinny_low_mass)
