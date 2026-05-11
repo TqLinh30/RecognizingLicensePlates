@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-05-11
+
+### Added
+
+- Added `scripts.generate_portfolio_pdfs` so the English and Traditional
+  Chinese portfolio PDFs can be regenerated consistently.
+
+### Fixed
+
+- Fixed portfolio PDF card overflow by shortening dense text, increasing card
+  spacing, and moving result/repository text safely inside card boundaries.
+- Fixed Traditional Chinese portfolio rendering by generating the PDF from a
+  UTF-8 Python module instead of passing non-ASCII text through PowerShell
+  stdin.
+
 ## [0.17.0] - 2026-05-11
 
 ### Added
