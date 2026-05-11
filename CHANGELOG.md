@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added English and Traditional Chinese portfolio PDFs with a seven-step
+  recognition demo generated from the GUI analysis pipeline.
+
+### Changed
+
+- Clarified portfolio wording around Git tags versus GitHub Releases to avoid
+  confusing branch/tag history with GitHub release objects.
+
 ## [0.16.0] - 2026-05-10
 
 ### Changed
